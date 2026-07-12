@@ -1,0 +1,380 @@
+export type Currency = 'PKR' | 'GBP' | 'USD' | 'CAD' | 'AUD' | 'EUR'
+
+export type UserRole =
+  | 'Super Admin'
+  | 'Branch Manager'
+  | 'Accountant'
+  | 'Cashier'
+  | 'Read Only'
+  | 'Counsellor'
+
+export type ApplicationStatus =
+  | 'Applied'
+  | 'Offer'
+  | 'Visa'
+  | 'Enrolled'
+  | 'Deferred'
+  | 'Withdrawn'
+
+export type InvoiceStatus =
+  | 'Draft'
+  | 'Sent'
+  | 'Partially Received'
+  | 'Fully Received'
+  | 'Closed'
+
+export type ApprovalStatus = 'Pending' | 'Approved' | 'Rejected'
+
+export type ReconciliationStatus = 'Matched' | 'Unmatched'
+
+export interface University {
+  id: string
+  name: string
+  country: string
+  defaultCommissionRate: number
+  currency: Currency
+}
+
+export interface Branch {
+  id: string
+  name: string
+  code: string
+  city: string
+  isHeadOffice?: boolean
+}
+
+export interface User {
+  id: string
+  name: string
+  email: string
+  role: UserRole
+  branchId: string
+}
+
+export interface Student {
+  id: string
+  studentId: string
+  name: string
+  cnicPassport: string
+  contact: string
+  email: string
+  branchId: string
+  consultantId: string
+  country: string
+  university: string
+  course: string
+  intake: string
+  group: string
+  applicationStatus: ApplicationStatus
+  subAgentId?: string
+  tuitionFee: number
+  scholarship: number
+  expectedCommissionRate: number
+  currency: Currency
+}
+
+export interface Invoice {
+  id: string
+  invoiceNo: string
+  studentId: string
+  branchId: string
+  invoiceDate: string
+  poNumber?: string
+  tuitionFee: number
+  scholarship: number
+  commissionRate: number
+  currency: Currency
+  bonus: number
+  status: InvoiceStatus
+}
+
+export interface Receivable {
+  id: string
+  receiptNo: string
+  invoiceId: string
+  bankAccountId: string
+  currency: Currency
+  amountReceived: number
+  exchangeRate: number
+  receiptDate: string
+  reconciliationStatus: ReconciliationStatus
+  isPartial: boolean
+  notes?: string
+  isBulkRemittance?: boolean
+  allocationStatus?: 'pending' | 'allocated'
+}
+
+export interface ReceivableAllocation {
+  id: string
+  receivableId: string
+  invoiceId: string
+  allocatedAmount: number
+  currency: Currency
+}
+
+export interface SubAgent {
+  id: string
+  name: string
+  ntn: string
+  email: string
+  contact: string
+  accountTitle: string
+  iban: string
+  accountNo: string
+  branchId: string
+}
+
+export interface SubAgentCommission {
+  id: string
+  subAgentId: string
+  studentId: string
+  invoiceId: string
+  branchId: string
+  grossFee: number
+  rateGiven: number
+  exchangeRate: number
+  followOnBonus: number
+  currency: Currency
+  status: 'Pending' | 'Paid' | 'Partial'
+}
+
+export interface SubAgentPayment {
+  id: string
+  commissionId: string
+  subAgentId: string
+  chequeNo: string
+  bankAccountId: string
+  amountPKR: number
+  paymentDate: string
+  currency: Currency
+}
+
+export interface PettyCashEntry {
+  id: string
+  branchId: string
+  date: string
+  category: string
+  description: string
+  type: 'in' | 'out'
+  principal: number
+  salesTax: number
+  srbSst: number
+  gst: number
+  total: number
+}
+
+export interface Expense {
+  id: string
+  branchId: string
+  vendor: string
+  category: string
+  date: string
+  principal: number
+  salesTax: number
+  srbSst: number
+  gst: number
+  total: number
+  paymentMode: string
+  approvalStatus: ApprovalStatus
+  requestedById?: string
+}
+
+export interface PayrollEmployee {
+  id: string
+  name: string
+  branchId: string
+  designation: string
+  basicSalary: number
+  allowances: number
+  salaryTax: number
+  netSalary: number
+  email?: string
+  bankAccount?: string
+  isActive: boolean
+}
+
+export type PayrollRunStatus = 'Draft' | 'Processed' | 'Paid'
+
+export interface PayrollRun {
+  id: string
+  period: string
+  branchId: string
+  status: PayrollRunStatus
+  runDate: string
+  paidDate?: string
+  totalGross: number
+  totalTax: number
+  totalNet: number
+  totalReimbursements: number
+  employeeCount: number
+  processedByName?: string
+}
+
+export interface PayrollLine {
+  id: string
+  payrollRunId: string
+  employeeId: string
+  basicSalary: number
+  allowances: number
+  grossSalary: number
+  salaryTax: number
+  netSalary: number
+  reimbursements: number
+  totalPayable: number
+}
+
+export interface Reimbursement {
+  id: string
+  employeeId: string
+  branchId: string
+  type: 'Travel' | 'Fuel' | 'Reimbursement' | 'Advance Settlement'
+  amount: number
+  date: string
+  status: ApprovalStatus
+  description?: string
+  requestedById?: string
+}
+
+export interface BankAccount {
+  id: string
+  name: string
+  bankName: string
+  accountNo: string
+  branchId: string
+  currency: Currency
+  balance: number
+}
+
+export interface BankTransaction {
+  id: string
+  bankAccountId: string
+  date: string
+  type: 'deposit' | 'withdrawal' | 'transfer'
+  description: string
+  amount: number
+  currency: Currency
+  reconciliationStatus: ReconciliationStatus
+}
+
+export interface Cheque {
+  id: string
+  chequeNo: string
+  bankAccountId: string
+  payee: string
+  amount: number
+  date: string
+  status: 'Issued' | 'Cleared' | 'Bounced'
+}
+
+export interface AccountNode {
+  id: string
+  code: string
+  name: string
+  type: 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+  balance: number
+  children?: AccountNode[]
+}
+
+export interface JournalLine {
+  accountCode: string
+  accountName: string
+  debit: number
+  credit: number
+}
+
+export type JournalSourceType = 'Manual' | 'Invoice' | 'Receivable' | 'Expense' | 'PettyCash' | 'Payroll' | 'Reversal'
+
+export interface JournalEntry {
+  id: string
+  entryNo: string
+  date: string
+  branchId: string
+  description: string
+  lines: JournalLine[]
+  approvalStatus: ApprovalStatus
+  sourceType?: JournalSourceType
+  sourceId?: string
+  isAutoPosted?: boolean
+}
+
+export interface ContraEntry {
+  id: string
+  date: string
+  type: 'Cash-Bank' | 'Bank-Bank' | 'Cash-Cash'
+  fromAccount: string
+  toAccount: string
+  amount: number
+  branchId: string
+}
+
+export interface TaxRecord {
+  id: string
+  type: 'WHT Receivable' | 'WHT Payable' | 'GST Input' | 'GST Output' | 'SRB-SST' | 'Salary Tax'
+  period: string
+  amount: number
+  branchId: string
+}
+
+export interface LedgerEntry {
+  id: string
+  date: string
+  description: string
+  debit: number
+  credit: number
+  balance: number
+  reference: string
+}
+
+export interface Document {
+  id: string
+  name: string
+  type: 'Invoice' | 'Receipt' | 'Bill' | 'Contract' | 'Agreement'
+  linkedType: string
+  linkedId: string
+  uploadDate: string
+  size: string
+}
+
+export interface Approval {
+  id: string
+  type: 'Expense' | 'Sub-Agent Payout' | 'Journal' | 'Refund' | 'Reimbursement' | 'Payroll'
+  title: string
+  amount: number
+  requestedBy: string
+  requestedById?: string
+  date: string
+  status: ApprovalStatus
+  branchId: string
+  sourceId?: string
+}
+
+export interface AuditLog {
+  id: string
+  userId: string
+  action: string
+  module: string
+  timestamp: string
+  ip: string
+  entityId?: string
+}
+
+export interface DashboardMetrics {
+  todayCollection: number
+  todayExpenses: number
+  cashBalance: number
+  bankBalance: number
+  monthlyRevenue: number
+  monthlyExpenses: number
+  netProfit: number
+  outstandingReceivables: number
+  outstandingPayables: number
+  pettyCashBalance: number
+}
+
+export interface ReportDefinition {
+  id: string
+  title: string
+  category: string
+  description: string
+  path: string
+}

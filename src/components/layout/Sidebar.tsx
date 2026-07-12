@@ -1,0 +1,191 @@
+import {
+  LayoutDashboard, FileText, Wallet, HandCoins,
+  BookOpen, Scale, BarChart3, Settings, ChevronDown, GraduationCap,
+  Calculator,
+} from 'lucide-react'
+import { useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { cn } from '@/lib/utils'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { useAppStore } from '@/store/app-store'
+import { useAuthStore } from '@/store/auth-store'
+import { useCurrentUser } from '@/hooks/useAuth'
+import { getPermissionLevel } from '@/lib/permissions'
+import { SIDEBAR_MODULE_MAP } from '@/lib/module-permissions'
+
+interface NavItem {
+  label: string
+  icon: React.ElementType
+  path?: string
+  children?: { label: string; path: string }[]
+}
+
+const navItems: NavItem[] = [
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+  { label: 'Master Sheet', icon: GraduationCap, path: '/master-sheet' },
+  {
+    label: 'Revenue', icon: FileText,
+    children: [
+      { label: 'Invoices', path: '/invoices' },
+      { label: 'Remittance', path: '/receivables' },
+    ],
+  },
+  {
+    label: 'Sub-Agents', icon: HandCoins,
+    children: [
+      { label: 'Sub-Agent Master', path: '/sub-agents' },
+      { label: 'Commission Sheet', path: '/sub-agents/commissions' },
+      { label: 'Payments', path: '/sub-agents/payments' },
+    ],
+  },
+  {
+    label: 'Cash & Expenses', icon: Wallet,
+    children: [
+      { label: 'Petty Cash', path: '/petty-cash' },
+      { label: 'Expenses', path: '/expenses' },
+      { label: 'Bank & Cash', path: '/bank-cash' },
+    ],
+  },
+  {
+    label: 'Accounting', icon: BookOpen,
+    children: [
+      { label: 'General Ledger', path: '/general-ledger' },
+      { label: 'Journal Entries', path: '/journal-entries' },
+    ],
+  },
+  {
+    label: 'Tax & Ledgers', icon: Scale,
+    children: [
+      { label: 'Tax Compliance', path: '/tax-compliance' },
+      { label: 'Student Ledger', path: '/ledgers/student' },
+      { label: 'Vendor Ledger', path: '/ledgers/vendor' },
+      { label: 'Sub-Agent Ledger', path: '/ledgers/sub-agent' },
+    ],
+  },
+  {
+    label: 'Operations', icon: Calculator,
+    children: [
+      { label: 'Payroll', path: '/payroll' },
+      { label: 'Documents', path: '/documents' },
+      { label: 'Approvals', path: '/approvals' },
+      { label: 'Audit Trail', path: '/audit-trail' },
+    ],
+  },
+  { label: 'Reports', icon: BarChart3, path: '/reports' },
+  {
+    label: 'Settings', icon: Settings,
+    children: [
+      { label: 'Branches', path: '/settings/branches' },
+      { label: 'Users & Roles', path: '/settings/users' },
+      { label: 'System Settings', path: '/settings/system' },
+    ],
+  },
+]
+
+export function Sidebar() {
+  const location = useLocation()
+  const collapsed = useAppStore((s) => s.sidebarCollapsed)
+  const [openMenus, setOpenMenus] = useState<string[]>(['Revenue', 'Sub-Agents'])
+  const user = useCurrentUser()
+  const matrix = useAuthStore((s) => s.permissionMatrix)
+
+  const visibleLabels = new Set(
+    Object.entries(SIDEBAR_MODULE_MAP)
+      .filter(([, moduleName]) => {
+        if (!user) return false
+        return getPermissionLevel(moduleName, user.role, matrix) !== 'none'
+      })
+      .map(([label]) => label)
+  )
+
+  const visibleItems = navItems.filter((item) => {
+    if (!visibleLabels.has(item.label)) return false
+    if (item.label === 'Revenue' && user?.role === 'Counsellor') return false
+    return true
+  })
+
+  const toggleMenu = (label: string) => {
+    setOpenMenus((prev) => prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label])
+  }
+
+  const isActive = (path: string) => location.pathname === path
+  const isChildActive = (children?: { path: string }[]) =>
+    children?.some((c) => location.pathname.startsWith(c.path))
+
+  return (
+    <aside className={cn(
+      'fixed left-0 top-0 z-40 flex h-screen flex-col bg-[var(--sidebar)] text-[var(--sidebar-foreground)] transition-all duration-300',
+      collapsed ? 'w-[68px]' : 'w-[220px]'
+    )}>
+      <div className="flex h-16 items-center gap-3 border-b border-[var(--sidebar-border)] px-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--sidebar-accent)] text-white font-bold text-sm">
+          SA
+        </div>
+        {!collapsed && (
+          <div>
+            <p className="font-semibold text-sm leading-tight">Study Abroad</p>
+            <p className="text-xs text-[var(--sidebar-foreground)]/60">Accounting System</p>
+          </div>
+        )}
+      </div>
+      <ScrollArea className="flex-1 py-3">
+        <nav className="space-y-0.5 px-2">
+          {visibleItems.map((item) => {
+            if (item.children) {
+              const open = openMenus.includes(item.label)
+              const active = isChildActive(item.children)
+              return (
+                <div key={item.label}>
+                  <button
+                    onClick={() => toggleMenu(item.label)}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-white/5',
+                      active && 'text-[var(--sidebar-accent)]'
+                    )}
+                  >
+                    <item.icon className="h-[18px] w-[18px] shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+                      </>
+                    )}
+                  </button>
+                  {!collapsed && open && (
+                    <div className="ml-4 mt-0.5 space-y-0.5 border-l border-[var(--sidebar-border)] pl-3">
+                      {item.children.map((child) => (
+                        <NavLink
+                          key={child.path}
+                          to={child.path}
+                          className={cn(
+                            'block rounded-lg px-3 py-2 text-sm transition-colors hover:bg-white/5',
+                            isActive(child.path) && 'bg-[var(--sidebar-accent)]/15 text-[var(--sidebar-accent)] font-medium'
+                          )}
+                        >
+                          {child.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path!}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-white/5',
+                  isActive(item.path!) && 'bg-[var(--sidebar-accent)]/15 text-[var(--sidebar-accent)] font-medium'
+                )}
+              >
+                <item.icon className="h-[18px] w-[18px] shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            )
+          })}
+        </nav>
+      </ScrollArea>
+    </aside>
+  )
+}
