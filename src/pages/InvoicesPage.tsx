@@ -146,7 +146,7 @@ export default function InvoicesPage() {
         `Please find attached commission invoice ${invoice.invoiceNo} dated ${formatDate(invoice.invoiceDate)}` +
         `${student ? ` for ${student.name} (${student.university})` : ''}.\n\n` +
         `Total amount: ${formatCurrency(amount, invoice.currency)}.\n\n` +
-        `Kind regards,\nStudy Abroad Accounting`,
+        `Kind regards,\nD' Educationist`,
     })
   }
 
@@ -518,7 +518,7 @@ export default function InvoicesPage() {
             <div className="space-y-4">
               <div className="rounded-lg border p-4">
                 <div className="mb-4 border-b pb-4 text-center">
-                  <p className="text-lg font-bold">Study Abroad Accounting</p>
+                  <p className="text-lg font-bold">D' Educationist</p>
                   <p className="text-sm text-muted-foreground">Commission Invoice</p>
                 </div>
                 <div className="mb-4 grid grid-cols-2 gap-2 text-sm">

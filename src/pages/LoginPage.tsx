@@ -53,11 +53,11 @@ export default function LoginPage() {
       {/* Brand panel */}
       <div className="hidden lg:flex lg:w-[45%] flex-col justify-between bg-[var(--sidebar)] p-10 text-[var(--sidebar-foreground)]">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--sidebar-accent)] text-lg font-bold text-white">
-            SA
+          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white">
+            <img src="/deducationist-icon.png" alt="D' Educationist" className="h-9 w-9 object-contain" />
           </div>
           <div>
-            <p className="font-semibold text-lg leading-tight">Study Abroad</p>
+            <p className="font-semibold text-lg leading-tight">D' Educationist</p>
             <p className="text-sm text-[var(--sidebar-foreground)]/60">Accounting System</p>
           </div>
         </div>
@@ -87,11 +87,11 @@ export default function LoginPage() {
       {/* Login form */}
       <div className="flex flex-1 flex-col items-center justify-center bg-background p-6 sm:p-10">
         <div className="mb-8 flex items-center gap-3 lg:hidden">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--sidebar)] text-sm font-bold text-white">
-            SA
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white border">
+            <img src="/deducationist-icon.png" alt="D' Educationist" className="h-8 w-8 object-contain" />
           </div>
           <div>
-            <p className="font-semibold">Study Abroad Accounting</p>
+            <p className="font-semibold">D' Educationist Accounting</p>
             <p className="text-xs text-muted-foreground">Sign in to continue</p>
           </div>
         </div>

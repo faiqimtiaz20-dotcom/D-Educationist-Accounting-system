@@ -118,12 +118,12 @@ export function Sidebar() {
       collapsed ? 'w-[68px]' : 'w-[220px]'
     )}>
       <div className="flex h-16 items-center gap-3 border-b border-[var(--sidebar-border)] px-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--sidebar-accent)] text-white font-bold text-sm">
-          SA
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+          <img src="/deducationist-icon.png" alt="D' Educationist" className="h-8 w-8 object-contain" />
         </div>
         {!collapsed && (
           <div>
-            <p className="font-semibold text-sm leading-tight">Study Abroad</p>
+            <p className="font-semibold text-sm leading-tight">D' Educationist</p>
             <p className="text-xs text-[var(--sidebar-foreground)]/60">Accounting System</p>
           </div>
         )}
