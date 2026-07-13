@@ -140,7 +140,7 @@ export default function PettyCashPage() {
         <MetricCard title="Total Tax (Period)" value={formatCurrency(totalTax)} icon={Banknote} accent="purple" />
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base"><PiggyBank className="h-4 w-4" /> Imprest Replenishment</CardTitle>
@@ -156,7 +156,7 @@ export default function PettyCashPage() {
             <CardTitle className="text-base">Daily Closing Summary</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Opening</p><p className="text-xl font-bold">{formatCurrency(openingBalance)}</p></div>
               <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Cash In</p><p className="text-xl font-bold text-emerald-600">+{formatCurrency(cashIn)}</p></div>
               <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Cash Out</p><p className="text-xl font-bold text-red-600">-{formatCurrency(cashOut)}</p></div>
@@ -207,7 +207,7 @@ export default function PettyCashPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2"><Label>Principal</Label><Input type="number" value={form.principal || ''} onChange={(e) => setForm({ ...form, principal: Number(e.target.value) })} /></div>
               <div className="space-y-2"><Label>Sales Tax</Label><Input type="number" value={form.salesTax || ''} onChange={(e) => setForm({ ...form, salesTax: Number(e.target.value) })} /></div>
               <div className="space-y-2"><Label>SRB-SST</Label><Input type="number" value={form.srbSst || ''} onChange={(e) => setForm({ ...form, srbSst: Number(e.target.value) })} /></div>

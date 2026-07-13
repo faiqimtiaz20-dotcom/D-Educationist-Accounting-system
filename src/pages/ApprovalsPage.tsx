@@ -55,12 +55,14 @@ export default function ApprovalsPage() {
       header: 'Actions',
       cell: (r) =>
         r.status === 'Pending' && canApprove ? (
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             <Button size="sm" variant="outline" className="h-8 text-emerald-600" onClick={() => handleAction(r.id, 'Approved')}>
-              <Check className="mr-1 h-3.5 w-3.5" /> Approve
+              <Check className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Approve</span>
             </Button>
             <Button size="sm" variant="outline" className="h-8 text-destructive" onClick={() => handleAction(r.id, 'Rejected')}>
-              <X className="mr-1 h-3.5 w-3.5" /> Reject
+              <X className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Reject</span>
             </Button>
           </div>
         ) : (

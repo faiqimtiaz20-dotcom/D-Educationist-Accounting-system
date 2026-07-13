@@ -110,7 +110,8 @@ export default function GeneralLedgerPage() {
         <CardHeader>
           <CardTitle className="text-base">Chart of Accounts</CardTitle>
         </CardHeader>
-        <CardContent className="p-0 pb-2">
+        <CardContent className="overflow-x-auto p-0 pb-2">
+          <div className="min-w-[480px]">
           <div className="flex items-center gap-2 border-b px-4 py-2 text-xs font-medium text-muted-foreground">
             <span className="w-4" />
             <span className="w-14">Code</span>
@@ -121,6 +122,7 @@ export default function GeneralLedgerPage() {
           {chartOfAccounts.map((node) => (
             <AccountTreeNode key={node.id} node={node} />
           ))}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -32,7 +32,7 @@ export function FilterPanel({ showCountry = true, showIntake = true, showUser = 
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-4">
+      <CardHeader className="flex flex-col gap-2 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base font-semibold">Filters</CardTitle>
         <Button variant="ghost" size="sm" className="text-muted-foreground">
           <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset

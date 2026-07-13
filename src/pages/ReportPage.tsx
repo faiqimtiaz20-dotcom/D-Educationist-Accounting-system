@@ -108,7 +108,7 @@ export function ReportPage() {
 
       <FilterPanel showCountry={report.category === 'Commission'} showIntake={false} />
 
-      <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+      <div className="flex flex-col gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
         <span className="text-muted-foreground">
           Category: <strong className="text-foreground">{report.category}</strong>
         </span>

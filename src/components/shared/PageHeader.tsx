@@ -36,10 +36,10 @@ export function PageHeader({
         )}
         <div>
           {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{title}</h1>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {children}
         {actionLabel && (
           actionTo ? (

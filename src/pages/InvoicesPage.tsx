@@ -521,7 +521,7 @@ export default function InvoicesPage() {
                   <p className="text-lg font-bold">D' Educationist</p>
                   <p className="text-sm text-muted-foreground">Commission Invoice</p>
                 </div>
-                <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
+                <div className="mb-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                   <div><p className="text-muted-foreground">Invoice No.</p><p className="font-medium">{previewInvoice.invoiceNo}</p></div>
                   <div><p className="text-muted-foreground">Date</p><p className="font-medium">{formatDate(previewInvoice.invoiceDate)}</p></div>
                   <div><p className="text-muted-foreground">Status</p><StatusPill status={previewInvoice.status} /></div>

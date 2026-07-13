@@ -4,10 +4,13 @@ import { persist } from 'zustand/middleware'
 interface AppState {
   selectedBranchId: string
   darkMode: boolean
+  sidebarOpen: boolean
   sidebarCollapsed: boolean
   setSelectedBranchId: (id: string) => void
+  setSidebarOpen: (open: boolean) => void
+  toggleSidebarOpen: () => void
+  toggleSidebarCollapsed: () => void
   toggleDarkMode: () => void
-  toggleSidebar: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -15,15 +18,18 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       selectedBranchId: 'all',
       darkMode: false,
+      sidebarOpen: false,
       sidebarCollapsed: false,
       setSelectedBranchId: (id) => set({ selectedBranchId: id }),
+      setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      toggleSidebarOpen: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      toggleSidebarCollapsed: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       toggleDarkMode: () =>
         set((s) => {
           const next = !s.darkMode
           document.documentElement.classList.toggle('dark', next)
           return { darkMode: next }
         }),
-      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
     }),
     { name: 'saa-app-store', partialize: (s) => ({ darkMode: s.darkMode, sidebarCollapsed: s.sidebarCollapsed }) }
   )

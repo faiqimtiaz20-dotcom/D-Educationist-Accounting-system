@@ -205,8 +205,8 @@ export function DataTable<T>({
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder={searchPlaceholder}
@@ -346,14 +346,16 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>Page {currentPage + 1} of {totalPages} ({filtered.length} records)</span>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-center sm:text-left">Page {currentPage + 1} of {totalPages} ({filtered.length} records)</span>
+        <div className="flex justify-center gap-2">
           <Button variant="outline" size="sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
-            <ChevronLeft className="h-4 w-4" /> Previous
+            <ChevronLeft className="h-4 w-4" />
+            <span className="sr-only sm:not-sr-only sm:inline">Previous</span>
           </Button>
           <Button variant="outline" size="sm" disabled={currentPage >= totalPages - 1} onClick={() => setPage(currentPage + 1)}>
-            Next <ChevronRight className="h-4 w-4" />
+            <span className="sr-only sm:not-sr-only sm:inline">Next</span>
+            <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       </div>

@@ -268,7 +268,7 @@ export default function ReceivablesPage() {
 
             {selectedInvoice && (
               <Card className="bg-muted/30">
-                <CardContent className="grid grid-cols-3 gap-3 p-4 text-sm">
+                <CardContent className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                   <div>
                     <p className="text-muted-foreground">Invoice Amount</p>
                     <p className="font-semibold">{formatCurrency(invoiceTotal, selectedInvoice.currency)}</p>

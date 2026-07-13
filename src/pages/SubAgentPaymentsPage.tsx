@@ -273,7 +273,7 @@ export default function SubAgentPaymentsPage() {
 
             {form.commissionId && (
               <Card className="bg-muted/30">
-                <CardContent className="grid grid-cols-2 gap-3 p-4 text-sm">
+                <CardContent className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2">
                   <div>
                     <p className="text-muted-foreground">Sub-Agent</p>
                     <p className="font-medium">{getSubAgent(form.subAgentId)?.name ?? '—'}</p>
@@ -340,7 +340,7 @@ export default function SubAgentPaymentsPage() {
                 <p className="text-muted-foreground">{new Date(voucher.paymentDate).toLocaleDateString('en-PK', { dateStyle: 'long' })}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <p className="text-muted-foreground">Payee</p>
                   <p className="font-medium">{agent?.name}</p>
