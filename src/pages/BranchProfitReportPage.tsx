@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCurrentUser, useEffectiveBranchId } from '@/hooks/useAuth'
 import { formatCurrency, subAgentPayable } from '@/lib/calculations'
 import { invoiceAmountPKR } from '@/lib/gl-posting'
-import { getInvoiceTotal } from '@/lib/invoice'
 import { canViewAllBranches } from '@/lib/permissions'
 import { useDataStore } from '@/store/data-store'
 import {
