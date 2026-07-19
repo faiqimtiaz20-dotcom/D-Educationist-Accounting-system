@@ -26,6 +26,17 @@ import ApprovalsPage from '@/pages/ApprovalsPage'
 import AuditTrailPage from '@/pages/AuditTrailPage'
 import { ReportsHubPage } from '@/pages/ReportsHubPage'
 import { ReportPage } from '@/pages/ReportPage'
+import CounsellorReportPage from '@/pages/CounsellorReportPage'
+import CountryWiseReportPage from '@/pages/CountryWiseReportPage'
+import UniversityWiseReportPage from '@/pages/UniversityWiseReportPage'
+import UniversityWisePLReportPage from '@/pages/UniversityWisePLReportPage'
+import BranchIncomeReportPage from '@/pages/BranchIncomeReportPage'
+import BranchExpensesReportPage from '@/pages/BranchExpensesReportPage'
+import BranchProfitReportPage from '@/pages/BranchProfitReportPage'
+import BranchCashPositionReportPage from '@/pages/BranchCashPositionReportPage'
+import ConsolidatedPLReportPage from '@/pages/ConsolidatedPLReportPage'
+import ConsolidatedBalanceSheetReportPage from '@/pages/ConsolidatedBalanceSheetReportPage'
+import ConsolidatedCashFlowReportPage from '@/pages/ConsolidatedCashFlowReportPage'
 import { BranchesSettingsPage } from '@/pages/BranchesSettingsPage'
 import { UsersSettingsPage } from '@/pages/UsersSettingsPage'
 import { SystemSettingsPage } from '@/pages/SystemSettingsPage'
@@ -71,6 +82,17 @@ export const routes: RouteObject[] = [
       { path: 'approvals', element: <ApprovalsPage /> },
       { path: 'audit-trail', element: <AuditTrailPage /> },
       { path: 'reports', element: <ReportsHubPage /> },
+      { path: 'reports/branch-income', element: <BranchIncomeReportPage /> },
+      { path: 'reports/branch-expenses', element: <BranchExpensesReportPage /> },
+      { path: 'reports/branch-profit', element: <BranchProfitReportPage /> },
+      { path: 'reports/branch-cash', element: <BranchCashPositionReportPage /> },
+      { path: 'reports/consolidated-pl', element: <ConsolidatedPLReportPage /> },
+      { path: 'reports/consolidated-bs', element: <ConsolidatedBalanceSheetReportPage /> },
+      { path: 'reports/consolidated-cf', element: <ConsolidatedCashFlowReportPage /> },
+      { path: 'reports/counsellor', element: <CounsellorReportPage /> },
+      { path: 'reports/country-wise', element: <CountryWiseReportPage /> },
+      { path: 'reports/university-wise', element: <UniversityWiseReportPage /> },
+      { path: 'reports/university-wise-pl', element: <UniversityWisePLReportPage /> },
       { path: 'reports/:reportId', element: <ReportPage /> },
       { path: 'settings/branches', element: <BranchesSettingsPage /> },
       { path: 'settings/users', element: <UsersSettingsPage /> },

@@ -12,10 +12,13 @@ import { useMemo } from 'react'
 const categoryColors: Record<string, string> = {
   Branch: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
   Consolidated: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+  Operations: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
   Standard: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
   Tax: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
   Commission: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300',
 }
+
+const CATEGORY_ORDER = ['Branch', 'Consolidated', 'Operations', 'Standard', 'Tax', 'Commission']
 
 export function ReportsHubPage() {
   const user = useCurrentUser()
@@ -26,7 +29,12 @@ export function ReportsHubPage() {
       list.push(report)
       map.set(report.category, list)
     }
-    return Array.from(map.entries())
+    return CATEGORY_ORDER
+      .filter((category) => map.has(category))
+      .map((category) => [category, map.get(category)!] as const)
+      .concat(
+        [...map.entries()].filter(([category]) => !CATEGORY_ORDER.includes(category))
+      )
   }, [])
 
   if (user?.role === 'Counsellor') {

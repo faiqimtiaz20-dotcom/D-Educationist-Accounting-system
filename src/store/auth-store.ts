@@ -59,7 +59,10 @@ export const useAuthStore = create<AuthState>()(
           rememberedEmail: remember ? normalized : get().rememberedEmail,
         })
 
-        if (!canViewAllBranches(user.role)) {
+        // Super Admin always starts on "All Branches"; others lock to their branch
+        if (canViewAllBranches(user.role)) {
+          useAppStore.getState().setSelectedBranchId('all')
+        } else {
           useAppStore.getState().setSelectedBranchId(user.branchId)
         }
 

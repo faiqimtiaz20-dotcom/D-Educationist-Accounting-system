@@ -14,16 +14,54 @@ interface FilterPanelProps {
   showCountry?: boolean
   showIntake?: boolean
   showUser?: boolean
+  /** Controlled date range — when set, filters use store-driven report state. */
+  dateFrom?: string
+  dateTo?: string
+  onDateFromChange?: (value: string) => void
+  onDateToChange?: (value: string) => void
+  onReset?: () => void
 }
 
-export function FilterPanel({ showCountry = true, showIntake = true, showUser = true }: FilterPanelProps) {
+export function FilterPanel({
+  showCountry = true,
+  showIntake = true,
+  showUser = true,
+  dateFrom: controlledFrom,
+  dateTo: controlledTo,
+  onDateFromChange,
+  onDateToChange,
+  onReset,
+}: FilterPanelProps) {
   const user = useCurrentUser()
   const branches = useDataStore((s) => s.branches)
   const users = useDataStore((s) => s.users)
   const effectiveBranchId = useEffectiveBranchId()
   const { setSelectedBranchId } = useAppStore()
-  const [dateFrom, setDateFrom] = useState('2026-07-01')
-  const [dateTo, setDateTo] = useState('2026-07-09')
+  const [localFrom, setLocalFrom] = useState('2026-01-01')
+  const [localTo, setLocalTo] = useState('2026-12-31')
+
+  const isControlled = controlledFrom !== undefined || controlledTo !== undefined
+  const dateFrom = isControlled ? (controlledFrom ?? '') : localFrom
+  const dateTo = isControlled ? (controlledTo ?? '') : localTo
+
+  const setDateFrom = (value: string) => {
+    if (onDateFromChange) onDateFromChange(value)
+    else setLocalFrom(value)
+  }
+  const setDateTo = (value: string) => {
+    if (onDateToChange) onDateToChange(value)
+    else setLocalTo(value)
+  }
+
+  const handleReset = () => {
+    if (onReset) {
+      onReset()
+      return
+    }
+    setLocalFrom('2026-01-01')
+    setLocalTo('2026-12-31')
+    if (user && canViewAllBranches(user.role)) setSelectedBranchId('all')
+  }
 
   const isSuperAdmin = user ? canViewAllBranches(user.role) : false
   const branchUsers = isSuperAdmin
@@ -34,7 +72,7 @@ export function FilterPanel({ showCountry = true, showIntake = true, showUser = 
     <Card>
       <CardHeader className="flex flex-col gap-2 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base font-semibold">Filters</CardTitle>
-        <Button variant="ghost" size="sm" className="text-muted-foreground">
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={handleReset}>
           <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset
         </Button>
       </CardHeader>
