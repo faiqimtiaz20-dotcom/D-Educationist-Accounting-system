@@ -12,6 +12,7 @@ import { approvals as initialApprovals } from '@/data/documents'
 import { payrollEmployees as initialPayrollEmployees, payrollRuns as initialPayrollRuns, payrollLines as initialPayrollLines, reimbursements as initialReimbursements } from '@/data/payroll'
 import { journalEntries as initialJournalEntries } from '@/data/journalEntries'
 import { subAgentCommissions as initialSubAgentCommissions, subAgentPayments as initialSubAgentPayments } from '@/data/subAgentCommissions'
+import { subAgents as initialSubAgents } from '@/data/subAgents'
 import { buildPayrollEmployee, buildPayrollLine, recalcEmployee } from '@/lib/payroll'
 import { logAudit } from '@/lib/audit'
 import { computeChartOfAccounts, isJournalBalanced } from '@/lib/gl'
@@ -26,7 +27,8 @@ import {
   reconcileMissingPostings,
   removeJournalsForSource,
 } from '@/lib/gl-posting'
-import { netCommission, subAgentPayable } from '@/lib/calculations'
+import { subAgentPayable } from '@/lib/calculations'
+import { getInvoiceTotal, invoiceHasStudent, linesFinanciallyEqual, normalizeInvoices } from '@/lib/invoice'
 import { isDateLocked } from '@/store/settings-store'
 import type {
   AccountNode,
@@ -46,6 +48,7 @@ import type {
   ReceivableAllocation,
   Reimbursement,
   Student,
+  SubAgent,
   SubAgentCommission,
   SubAgentPayment,
   University,
@@ -61,7 +64,7 @@ function nextId(prefix: string, existing: { id: string }[]) {
 }
 
 function invoiceTotal(invoice: Invoice) {
-  return netCommission(invoice.tuitionFee, invoice.scholarship, invoice.commissionRate) + invoice.bonus
+  return getInvoiceTotal(invoice)
 }
 
 function deriveInvoiceStatus(invoice: Invoice, paid: number): InvoiceStatus {
@@ -124,6 +127,7 @@ interface DataState {
   payrollRuns: PayrollRun[]
   payrollLines: PayrollLine[]
   reimbursements: Reimbursement[]
+  subAgents: SubAgent[]
   subAgentCommissions: SubAgentCommission[]
   subAgentPayments: SubAgentPayment[]
 
@@ -133,11 +137,15 @@ interface DataState {
   updateStudent: (id: string, student: Partial<Student>) => void
   deleteStudent: (id: string) => void
 
+  addSubAgent: (agent: Omit<SubAgent, 'id'>) => void
+  updateSubAgent: (id: string, agent: Partial<SubAgent>) => void
+  deleteSubAgent: (id: string) => boolean
+
   addInvoice: (invoice: Omit<Invoice, 'id' | 'invoiceNo'>) => void
   updateInvoice: (id: string, invoice: Partial<Invoice>) => void
   deleteInvoice: (id: string) => boolean
 
-  addReceivable: (receivable: Omit<Receivable, 'id' | 'receiptNo' | 'isPartial'> & { isPartial?: boolean }) => void
+  addReceivable: (receivable: Omit<Receivable, 'id' | 'receiptNo' | 'isPartial'> & { isPartial?: boolean }) => boolean
   updateReceivable: (id: string, receivable: Partial<Receivable>) => void
   deleteReceivable: (id: string) => void
   getInvoiceAmountPaid: (invoiceId: string) => number
@@ -204,6 +212,7 @@ export const useDataStore = create<DataState>()(
       payrollRuns: initialPayrollRuns,
       payrollLines: initialPayrollLines,
       reimbursements: initialReimbursements,
+      subAgents: initialSubAgents,
       subAgentCommissions: initialSubAgentCommissions,
       subAgentPayments: initialSubAgentPayments,
 
@@ -255,11 +264,35 @@ export const useDataStore = create<DataState>()(
 
       deleteStudent: (id) =>
         set((s) => {
-          const hasInvoices = s.invoices.some((i) => i.studentId === id)
+          const hasInvoices = s.invoices.some((i) => invoiceHasStudent(i, id))
           if (hasInvoices) return s
           logAudit({ module: 'Master Sheet', action: 'Deleted student', entityId: id })
           return { students: s.students.filter((st) => st.id !== id) }
         }),
+
+      addSubAgent: (agent) =>
+        set((s) => {
+          const newAgent: SubAgent = { ...agent, id: nextId('sa', s.subAgents) }
+          logAudit({ module: 'Sub-Agent Master', action: 'Created sub-agent', entityId: newAgent.id, details: agent.name })
+          return { subAgents: [...s.subAgents, newAgent] }
+        }),
+
+      updateSubAgent: (id, updates) =>
+        set((s) => {
+          logAudit({ module: 'Sub-Agent Master', action: 'Updated sub-agent', entityId: id })
+          return { subAgents: s.subAgents.map((a) => (a.id === id ? { ...a, ...updates } : a)) }
+        }),
+
+      deleteSubAgent: (id) => {
+        const s = get()
+        const inUse =
+          s.subAgentCommissions.some((c) => c.subAgentId === id) ||
+          s.students.some((st) => st.subAgentId === id)
+        if (inUse) return false
+        logAudit({ module: 'Sub-Agent Master', action: 'Deleted sub-agent', entityId: id })
+        set({ subAgents: s.subAgents.filter((a) => a.id !== id) })
+        return true
+      },
 
       addInvoice: (invoice) =>
         set((s) => {
@@ -286,7 +319,7 @@ export const useDataStore = create<DataState>()(
           const date = updates.invoiceDate ?? existing.invoiceDate
           if (isDateLocked(date)) return s
           const hasPayments = invoiceHasPayments(s.receivables, id)
-          if (hasPayments && (updates.tuitionFee !== undefined || updates.scholarship !== undefined || updates.commissionRate !== undefined || updates.bonus !== undefined)) {
+          if (hasPayments && updates.lines !== undefined && !linesFinanciallyEqual(existing.lines, updates.lines)) {
             return s
           }
           const updated = { ...existing, ...updates }
@@ -325,33 +358,40 @@ export const useDataStore = create<DataState>()(
           .filter((r) => r.invoiceId === invoiceId && !r.isBulkRemittance)
           .reduce((s, r) => s + r.amountReceived, 0),
 
-      addReceivable: (receivable) =>
-        set((s) => {
-          if (isDateLocked(receivable.receiptDate)) return s
-          const invoice = s.invoices.find((i) => i.id === receivable.invoiceId)
-          if (invoice?.status === 'Draft') return s
-          const count = s.receivables.length + 1
-          const total = invoice ? invoiceTotal(invoice) : 0
-          const paidBefore = s.receivables
-            .filter((r) => r.invoiceId === receivable.invoiceId && !r.isBulkRemittance)
-            .reduce((sum, r) => sum + r.amountReceived, 0)
-          const isPartial =
-            receivable.isPartial ??
-            (paidBefore + receivable.amountReceived < total - 0.001)
-          const newReceivable: Receivable = {
-            ...receivable,
-            id: nextId('rec', s.receivables),
-            receiptNo: `REC-2026-${String(count).padStart(4, '0')}`,
-            isPartial,
-          }
-          const receivables = [...s.receivables, newReceivable]
-          let journalEntries = appendAutoJournal(
-            s.journalEntries,
-            createReceivableReceiptEntry(newReceivable, invoice, s.journalEntries)
-          )
-          logAudit({ module: 'Receivables', action: 'Recorded receipt', entityId: newReceivable.id, details: newReceivable.receiptNo })
-          return { receivables, invoices: syncInvoiceStatuses(s.invoices, receivables), journalEntries }
-        }),
+      addReceivable: (receivable) => {
+        const s = get()
+        if (isDateLocked(receivable.receiptDate)) return false
+        const invoice = s.invoices.find((i) => i.id === receivable.invoiceId)
+        if (!invoice) return false
+        if (invoice.status === 'Draft') return false
+        if (invoice.status === 'Closed') return false
+
+        const total = invoiceTotal(invoice)
+        const paidBefore = s.receivables
+          .filter((r) => r.invoiceId === receivable.invoiceId && !r.isBulkRemittance)
+          .reduce((sum, r) => sum + r.amountReceived, 0)
+        const outstanding = Math.max(0, total - paidBefore)
+        if (receivable.amountReceived <= 0 || receivable.amountReceived > outstanding + 0.001) return false
+
+        const count = s.receivables.length + 1
+        const isPartial =
+          receivable.isPartial ??
+          (paidBefore + receivable.amountReceived < total - 0.001)
+        const newReceivable: Receivable = {
+          ...receivable,
+          id: nextId('rec', s.receivables),
+          receiptNo: `REC-2026-${String(count).padStart(4, '0')}`,
+          isPartial,
+        }
+        const receivables = [...s.receivables, newReceivable]
+        const journalEntries = appendAutoJournal(
+          s.journalEntries,
+          createReceivableReceiptEntry(newReceivable, invoice, s.journalEntries)
+        )
+        logAudit({ module: 'Receivables', action: 'Recorded receipt', entityId: newReceivable.id, details: newReceivable.receiptNo })
+        set({ receivables, invoices: syncInvoiceStatuses(s.invoices, receivables), journalEntries })
+        return true
+      },
 
       updateReceivable: (id, updates) =>
         set((s) => {
@@ -822,8 +862,32 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: 'saa-data-store',
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<DataState>
+        return {
+          ...current,
+          ...p,
+          invoices: normalizeInvoices((p.invoices as unknown[]) ?? current.invoices),
+          subAgents: ((p.subAgents as SubAgent[] | undefined)?.length
+            ? (p.subAgents as SubAgent[])
+            : current.subAgents
+          ).map(({ id, name, ntn, email, contact, accountTitle, iban, accountNo }) => ({
+            id,
+            name,
+            ntn,
+            email,
+            contact,
+            accountTitle,
+            iban,
+            accountNo,
+          })),
+        }
+      },
       onRehydrateStorage: () => (state: DataState | undefined) => {
-        state?.reconcileGlPostings()
+        if (state) {
+          state.invoices = normalizeInvoices(state.invoices as unknown as unknown[])
+          state.reconcileGlPostings()
+        }
       },
     }
   )

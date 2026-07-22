@@ -66,8 +66,15 @@ export default function AllocationPage() {
     () =>
       activeAllocations.map((alloc) => {
         const invoice = invoices.find((i) => i.id === alloc.invoiceId)
-        const student = invoice ? students.find((s) => s.id === invoice.studentId) : null
-        return { ...alloc, invoice, student }
+        const student = invoice
+          ? students.find((s) => s.id === invoice.lines?.[0]?.studentId) ?? null
+          : null
+        const studentLabel = invoice
+          ? (invoice.lines.length > 1
+            ? `${student?.name ?? '—'} +${invoice.lines.length - 1}`
+            : student?.name ?? '—')
+          : '—'
+        return { ...alloc, invoice, student, studentLabel }
       }),
     [activeAllocations, invoices, students]
   )
@@ -182,7 +189,7 @@ export default function AllocationPage() {
                     {allocationRows.map((row, index) => (
                       <TableRow key={row.invoiceId}>
                         <TableCell className="font-medium">{row.invoice?.invoiceNo}</TableCell>
-                        <TableCell>{row.student?.name}</TableCell>
+                        <TableCell>{row.studentLabel}</TableCell>
                         <TableCell>{row.student?.university}</TableCell>
                         <TableCell>{row.invoice && <StatusPill status={row.invoice.status} />}</TableCell>
                         <TableCell className="text-right">

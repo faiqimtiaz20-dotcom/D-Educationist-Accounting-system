@@ -1,4 +1,4 @@
-import { getInvoiceOutstanding, getInvoiceTotal } from '@/lib/invoice'
+import { getInvoiceLineTotal, getInvoiceOutstanding, getInvoiceTotal, invoiceHasStudent } from '@/lib/invoice'
 import type { Expense, Invoice, PettyCashEntry, Receivable, Student } from '@/types'
 
 export interface DashboardMetrics {
@@ -81,10 +81,12 @@ export function computeCommissionByUniversity(students: Student[], invoices: Inv
   const map = new Map<string, number>()
   for (const inv of invoices) {
     if (inv.status === 'Draft') continue
-    const student = students.find((s) => s.id === inv.studentId)
-    const uni = student?.university ?? 'Unknown'
-    const commission = getInvoiceTotal(inv)
-    map.set(uni, (map.get(uni) ?? 0) + commission)
+    for (const line of inv.lines ?? []) {
+      const student = students.find((s) => s.id === line.studentId)
+      const uni = student?.university ?? 'Unknown'
+      const commission = getInvoiceLineTotal(line)
+      map.set(uni, (map.get(uni) ?? 0) + commission)
+    }
   }
   return Array.from(map.entries())
     .map(([name, value]) => ({ name, value }))
@@ -112,13 +114,16 @@ export function buildStudentLedger(
   invoices: Invoice[],
   receivables: Receivable[]
 ) {
-  const studentInvoices = invoices.filter((i) => i.studentId === studentId)
+  const studentInvoices = invoices.filter((i) => invoiceHasStudent(i, studentId))
   const entries: { id: string; date: string; description: string; debit: number; credit: number; reference: string }[] = []
 
   for (const inv of studentInvoices) {
-    const commission = getInvoiceTotal(inv)
+    const line = (inv.lines ?? []).find((l) => l.studentId === studentId)
+    const commission = line ? getInvoiceLineTotal(line) : 0
+    const invTotal = getInvoiceTotal(inv)
+    const share = invTotal > 0 ? commission / invTotal : 0
     entries.push({
-      id: `inv-${inv.id}`,
+      id: `inv-${inv.id}-${studentId}`,
       date: inv.invoiceDate,
       description: `Invoice ${inv.invoiceNo}`,
       debit: commission,
@@ -127,11 +132,11 @@ export function buildStudentLedger(
     })
     for (const rec of receivables.filter((r) => r.invoiceId === inv.id)) {
       entries.push({
-        id: `rec-${rec.id}`,
+        id: `rec-${rec.id}-${studentId}`,
         date: rec.receiptDate,
         description: `Payment ${rec.receiptNo}${rec.isPartial ? ' (partial)' : ''}`,
         debit: 0,
-        credit: rec.amountReceived,
+        credit: rec.amountReceived * share,
         reference: rec.receiptNo,
       })
     }

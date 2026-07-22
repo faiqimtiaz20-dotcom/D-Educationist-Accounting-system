@@ -67,7 +67,7 @@ export default function BranchIncomeReportPage() {
 
   const detailRows = useMemo((): IncomeDetailRow[] => {
     return scopedInvoices.map((inv) => {
-      const student = students.find((s) => s.id === inv.studentId)
+      const student = students.find((s) => s.id === inv.lines?.[0]?.studentId)
       const earnedPKR = invoiceAmountPKR(inv)
       const received = getInvoicePaid(receivables, inv.id)
       const outstanding = getInvoiceOutstanding(inv, receivables)
@@ -77,8 +77,14 @@ export default function BranchIncomeReportPage() {
         invoiceDate: inv.invoiceDate,
         branchId: inv.branchId,
         branchName: getBranchName(inv.branchId),
-        studentName: student?.name ?? '—',
-        university: student?.university ?? '—',
+        studentName: student
+          ? (inv.lines.length > 1 ? `${student.name} +${inv.lines.length - 1}` : student.name)
+          : '—',
+        university: student?.university
+          ? (inv.lines.length > 1
+            ? `${[...new Set(inv.lines.map((l) => students.find((s) => s.id === l.studentId)?.university).filter(Boolean))].join(', ')}`
+            : student.university)
+          : '—',
         country: student?.country ?? '—',
         currency: inv.currency,
         commission: getInvoiceTotal(inv),

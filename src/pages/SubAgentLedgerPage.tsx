@@ -6,7 +6,6 @@ import { StatusPill } from '@/components/shared/StatusPill'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { subAgents } from '@/data'
 import { subAgentPayable, formatCurrency } from '@/lib/calculations'
 import { useDataStore } from '@/store/data-store'
 import type { LedgerEntry, SubAgentCommission, SubAgentPayment } from '@/types'
@@ -54,23 +53,25 @@ function buildSubAgentLedger(
 }
 
 export default function SubAgentLedgerPage() {
+  const subAgents = useDataStore((s) => s.subAgents)
   const subAgentCommissions = useDataStore((s) => s.subAgentCommissions)
   const subAgentPayments = useDataStore((s) => s.subAgentPayments)
-  const [subAgentId, setSubAgentId] = useState(subAgents[0]?.id ?? '')
+  const [subAgentId, setSubAgentId] = useState('')
 
-  const subAgent = subAgents.find((a) => a.id === subAgentId)
+  const effectiveSubAgentId = subAgentId || subAgents[0]?.id || ''
+  const subAgent = subAgents.find((a) => a.id === effectiveSubAgentId)
   const ledger = useMemo(
-    () => (subAgentId ? buildSubAgentLedger(subAgentId, subAgentCommissions, subAgentPayments) : []),
-    [subAgentId, subAgentCommissions, subAgentPayments]
+    () => (effectiveSubAgentId ? buildSubAgentLedger(effectiveSubAgentId, subAgentCommissions, subAgentPayments) : []),
+    [effectiveSubAgentId, subAgentCommissions, subAgentPayments]
   )
 
-  const commissions = subAgentCommissions.filter((c) => c.subAgentId === subAgentId)
+  const commissions = subAgentCommissions.filter((c) => c.subAgentId === effectiveSubAgentId)
   const totalPayable = commissions.reduce(
     (s, c) => s + subAgentPayable(c.grossFee, c.rateGiven, c.exchangeRate, c.followOnBonus),
     0
   )
   const totalPaid = subAgentPayments
-    .filter((p) => p.subAgentId === subAgentId)
+    .filter((p) => p.subAgentId === effectiveSubAgentId)
     .reduce((s, p) => s + p.amountPKR, 0)
   const runningBalance = ledger.length ? ledger[ledger.length - 1].balance : 0
 
@@ -117,7 +118,7 @@ export default function SubAgentLedgerPage() {
         <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-end">
           <div className="flex-1 space-y-2">
             <Label>Select Sub-Agent</Label>
-            <Select value={subAgentId} onValueChange={setSubAgentId}>
+            <Select value={effectiveSubAgentId} onValueChange={setSubAgentId}>
               <SelectTrigger><SelectValue placeholder="Choose a sub-agent" /></SelectTrigger>
               <SelectContent>
                 {subAgents.map((a) => (

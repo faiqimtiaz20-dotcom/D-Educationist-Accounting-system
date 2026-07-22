@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCurrentUser, useEffectiveBranchId } from '@/hooks/useAuth'
 import { formatCurrency, subAgentPayable } from '@/lib/calculations'
 import { invoiceAmountPKR } from '@/lib/gl-posting'
-import { getInvoiceOutstanding, getInvoicePaid, getInvoiceTotal } from '@/lib/invoice'
+import { getInvoiceLineTotal, getInvoiceOutstanding, getInvoicePaid, getInvoiceTotal } from '@/lib/invoice'
 import { canViewAllBranches } from '@/lib/permissions'
 import { useAppStore } from '@/store/app-store'
 import { useDataStore } from '@/store/data-store'
@@ -128,35 +128,46 @@ export default function UniversityWisePLReportPage() {
   }, [subAgentCommissions, scopedInvoiceIds, isSuperAdmin, user, effectiveBranchId])
 
   const detailRows = useMemo((): UniversityPLDetailRow[] => {
-    return scopedInvoices.map((inv) => {
-      const student = students.find((s) => s.id === inv.studentId)
-      const uniName = student?.university || 'Unknown'
-      const meta = universityMeta.get(uniName)
-      const incomePKR = invoiceAmountPKR(inv)
-      const costPKR = costByInvoiceId.get(inv.id) ?? 0
-      const profitPKR = incomePKR - costPKR
-      const received = getInvoicePaid(receivables, inv.id)
-      const outstanding = getInvoiceOutstanding(inv, receivables)
-      return {
-        id: inv.id,
-        invoiceNo: inv.invoiceNo,
-        invoiceDate: inv.invoiceDate,
-        branchId: inv.branchId,
-        branchName: branchName(inv.branchId),
-        studentId: inv.studentId,
-        studentName: student?.name ?? '—',
-        university: uniName,
-        country: student?.country || meta?.country || '—',
-        currency: inv.currency,
-        commission: getInvoiceTotal(inv),
-        incomePKR,
-        costPKR,
-        profitPKR,
-        received,
-        outstanding,
-        netProfitPKR: profitPKR - outstanding,
-        status: inv.status,
-      }
+    return scopedInvoices.flatMap((inv) => {
+      const invTotal = getInvoiceTotal(inv)
+      const incomePKRTotal = invoiceAmountPKR(inv)
+      const costPKRTotal = costByInvoiceId.get(inv.id) ?? 0
+      const receivedTotal = getInvoicePaid(receivables, inv.id)
+      const outstandingTotal = getInvoiceOutstanding(inv, receivables)
+      const lines = inv.lines?.length ? inv.lines : []
+
+      return lines.map((line) => {
+        const student = students.find((s) => s.id === line.studentId)
+        const uniName = student?.university || 'Unknown'
+        const meta = universityMeta.get(uniName)
+        const lineTotal = getInvoiceLineTotal(line)
+        const share = invTotal > 0 ? lineTotal / invTotal : 0
+        const incomePKR = incomePKRTotal * share
+        const costPKR = costPKRTotal * share
+        const profitPKR = incomePKR - costPKR
+        const received = receivedTotal * share
+        const outstanding = outstandingTotal * share
+        return {
+          id: `${inv.id}-${line.id}`,
+          invoiceNo: inv.invoiceNo,
+          invoiceDate: inv.invoiceDate,
+          branchId: inv.branchId,
+          branchName: branchName(inv.branchId),
+          studentId: line.studentId,
+          studentName: student?.name ?? '—',
+          university: uniName,
+          country: student?.country || meta?.country || '—',
+          currency: inv.currency,
+          commission: lineTotal,
+          incomePKR,
+          costPKR,
+          profitPKR,
+          received,
+          outstanding,
+          netProfitPKR: profitPKR - outstanding,
+          status: inv.status,
+        }
+      })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- branchName uses store branches
   }, [scopedInvoices, students, receivables, costByInvoiceId, universityMeta, branches])
@@ -194,7 +205,7 @@ export default function UniversityWisePLReportPage() {
           key: university,
           university,
           country: rows[0]?.country ?? meta?.country ?? '—',
-          invoiceCount: rows.length,
+          invoiceCount: new Set(rows.map((r) => r.invoiceNo)).size,
           studentCount: studentIds.size,
           incomePKR,
           costPKR,

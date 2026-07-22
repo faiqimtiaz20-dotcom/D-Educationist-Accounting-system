@@ -15,10 +15,13 @@ import { calcWHT, formatCurrency, grossPKR, netPKR } from '@/lib/calculations'
 import {
   getInvoiceOutstanding,
   getInvoiceReceivables,
+  getInvoiceStudentLabel,
   getInvoiceTotal,
+  getInvoiceUniversities,
 } from '@/lib/invoice'
 import { branchFilterOptions, currencyFilterOptions } from '@/lib/filter-options'
 import { useDataStore } from '@/store/data-store'
+import { isDateLocked } from '@/store/settings-store'
 import type { Currency, Receivable, ReconciliationStatus } from '@/types'
 import { History, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -130,6 +133,22 @@ export default function ReceivablesPage() {
       toast.error('Invoice and bank account are required')
       return
     }
+    if (!selectedInvoice) {
+      toast.error('Selected invoice was not found')
+      return
+    }
+    if (selectedInvoice.status === 'Draft') {
+      toast.error('Send the invoice first — remittance cannot be recorded on Draft invoices')
+      return
+    }
+    if (selectedInvoice.status === 'Closed') {
+      toast.error('Cannot record remittance against a closed invoice')
+      return
+    }
+    if (isDateLocked(form.receiptDate)) {
+      toast.error('This period is locked — cannot post to a closed fiscal period')
+      return
+    }
     if (form.amountReceived <= 0) {
       toast.error('Amount must be greater than zero')
       return
@@ -155,10 +174,16 @@ export default function ReceivablesPage() {
     if (isEdit && editId) {
       updateReceivable(editId, payload)
       toast.success('Receipt updated')
-    } else {
-      addReceivable(payload)
-      toast.success(willBePartial ? 'Partial payment recorded' : 'Full payment recorded')
+      setDialogOpen(false)
+      return
     }
+
+    const ok = addReceivable(payload)
+    if (!ok) {
+      toast.error('Could not record remittance — check invoice status, amount, and fiscal period')
+      return
+    }
+    toast.success(willBePartial ? 'Partial payment recorded' : 'Full payment recorded')
     setDialogOpen(false)
   }
 
@@ -177,7 +202,7 @@ export default function ReceivablesPage() {
       header: 'Student',
       cell: (row) => {
         const invoice = invoices.find((i) => i.id === row.invoiceId)
-        return invoice ? getStudent(invoice.studentId)?.name ?? '—' : '—'
+        return invoice ? getInvoiceStudentLabel(invoice, getStudent) : '—'
       },
     },
     {
@@ -185,12 +210,27 @@ export default function ReceivablesPage() {
       header: 'University',
       cell: (row) => {
         const invoice = invoices.find((i) => i.id === row.invoiceId)
-        return invoice ? getStudent(invoice.studentId)?.university ?? '—' : '—'
+        return invoice ? getInvoiceUniversities(invoice, getStudent) : '—'
       },
     },
     { key: 'bank', header: 'Bank Name', cell: (row) => getBankName(row.bankAccountId) },
     { key: 'date', header: 'Receipt Date', cell: (row) => row.receiptDate },
     { key: 'currency', header: 'Currency', cell: (row) => row.currency },
+    {
+      key: 'bonus',
+      header: 'Bonus',
+      className: 'text-right',
+      sortAccessor: (row) => {
+        const invoice = invoices.find((i) => i.id === row.invoiceId)
+        return invoice ? invoice.lines?.reduce((s, l) => s + l.bonus, 0) ?? 0 : 0
+      },
+      cell: (row) => {
+        const invoice = invoices.find((i) => i.id === row.invoiceId)
+        if (!invoice) return '—'
+        const bonus = invoice.lines?.reduce((s, l) => s + l.bonus, 0) ?? 0
+        return formatCurrency(bonus, invoice.currency)
+      },
+    },
     { key: 'amount', header: 'Amount Received', cell: (row) => formatCurrency(row.amountReceived, row.currency) },
     { key: 'rate', header: 'Exchange Rate', cell: (row) => row.exchangeRate.toFixed(2) },
     { key: 'gross', header: 'Gross (PKR)', cell: (row) => formatCurrency(grossPKR(row.amountReceived, row.exchangeRate)) },
@@ -220,12 +260,13 @@ export default function ReceivablesPage() {
         searchPlaceholder="Search by invoice, receipt no, or student..."
         searchFilter={(row, query) => {
           const invoice = invoices.find((i) => i.id === row.invoiceId)
-          const student = invoice ? getStudent(invoice.studentId) : null
+          const studentLabel = invoice ? getInvoiceStudentLabel(invoice, getStudent).toLowerCase() : ''
+          const uniLabel = invoice ? getInvoiceUniversities(invoice, getStudent).toLowerCase() : ''
           return (
             row.receiptNo.toLowerCase().includes(query) ||
             (invoice?.invoiceNo.toLowerCase().includes(query) ?? false) ||
-            (student?.name.toLowerCase().includes(query) ?? false) ||
-            (student?.university.toLowerCase().includes(query) ?? false) ||
+            studentLabel.includes(query) ||
+            uniLabel.includes(query) ||
             getBankName(row.bankAccountId).toLowerCase().includes(query)
           )
         }}
@@ -253,12 +294,12 @@ export default function ReceivablesPage() {
                 <SelectTrigger><SelectValue placeholder="Select invoice" /></SelectTrigger>
                 <SelectContent>
                   {branchInvoices
-                    .filter((i) => i.status !== 'Closed')
+                    .filter((i) => i.status !== 'Closed' && i.status !== 'Draft')
                     .map((i) => {
                       const out = getInvoiceOutstanding(i, receivables, isEdit ? editId ?? undefined : undefined)
                       return (
                         <SelectItem key={i.id} value={i.id} disabled={!isEdit && out <= 0}>
-                          {i.invoiceNo} — {getStudent(i.studentId)?.name} (Outstanding: {formatCurrency(out, i.currency)})
+                          {i.invoiceNo} — {getInvoiceStudentLabel(i, getStudent)} (Outstanding: {formatCurrency(out, i.currency)})
                         </SelectItem>
                       )
                     })}

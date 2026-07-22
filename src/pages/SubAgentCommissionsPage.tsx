@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { getBranchName, getSubAgent, subAgents } from '@/data'
+import { getBranchName } from '@/data'
 import { useBranchFilter } from '@/hooks/useBranchFilter'
 import { calcWHT, formatCurrency, subAgentPayable } from '@/lib/calculations'
 import { branchFilterOptions, currencyFilterOptions } from '@/lib/filter-options'
@@ -38,6 +38,7 @@ const emptyCommission = {
 
 export default function SubAgentCommissionsPage() {
   const subAgentCommissions = useDataStore((s) => s.subAgentCommissions)
+  const subAgents = useDataStore((s) => s.subAgents)
   const addSubAgentCommission = useDataStore((s) => s.addSubAgentCommission)
   const updateSubAgentCommission = useDataStore((s) => s.updateSubAgentCommission)
   const deleteSubAgentCommission = useDataStore((s) => s.deleteSubAgentCommission)
@@ -45,9 +46,9 @@ export default function SubAgentCommissionsPage() {
   const students = useDataStore((s) => s.students)
 
   const getStudent = (id: string) => students.find((s) => s.id === id)
+  const getSubAgent = (id: string) => subAgents.find((a) => a.id === id)
 
   const filtered = useBranchFilter(subAgentCommissions)
-  const branchSubAgents = useBranchFilter(subAgents)
   const branchInvoices = useBranchFilter(invoices)
   const [statusFilter, setStatusFilter] = useState('all')
 
@@ -95,13 +96,14 @@ export default function SubAgentCommissionsPage() {
       setForm((p) => ({ ...p, invoiceId }))
       return
     }
+    const firstLine = invoice.lines?.[0]
     setForm((p) => ({
       ...p,
       invoiceId,
-      studentId: invoice.studentId,
+      studentId: firstLine?.studentId ?? '',
       branchId: invoice.branchId,
       currency: invoice.currency,
-      grossFee: invoice.tuitionFee,
+      grossFee: firstLine?.tuitionFee ?? 0,
     }))
   }
 
@@ -272,7 +274,7 @@ export default function SubAgentCommissionsPage() {
                 <Select value={form.subAgentId} onValueChange={(v) => setForm((p) => ({ ...p, subAgentId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select sub-agent" /></SelectTrigger>
                   <SelectContent>
-                    {branchSubAgents.map((a) => (
+                    {subAgents.map((a) => (
                       <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -283,11 +285,16 @@ export default function SubAgentCommissionsPage() {
                 <Select value={form.invoiceId} onValueChange={loadInvoice}>
                   <SelectTrigger><SelectValue placeholder="Select invoice" /></SelectTrigger>
                   <SelectContent>
-                    {branchInvoices.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>
-                        {i.invoiceNo} — {getStudent(i.studentId)?.name ?? i.studentId}
-                      </SelectItem>
-                    ))}
+                    {branchInvoices.map((i) => {
+                      const first = i.lines?.[0]
+                      const name = first ? getStudent(first.studentId)?.name ?? first.studentId : '—'
+                      const suffix = (i.lines?.length ?? 0) > 1 ? ` +${i.lines.length - 1}` : ''
+                      return (
+                        <SelectItem key={i.id} value={i.id}>
+                          {i.invoiceNo} — {name}{suffix}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -295,9 +302,39 @@ export default function SubAgentCommissionsPage() {
 
             <Card className="bg-muted/30">
               <CardContent className="grid grid-cols-1 gap-3 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                <div>
+                <div className="space-y-2 sm:col-span-2 lg:col-span-1">
                   <p className="text-muted-foreground">Student</p>
-                  <p className="font-medium">{form.studentId ? getStudent(form.studentId)?.name ?? '—' : '—'}</p>
+                  {(() => {
+                    const inv = invoices.find((i) => i.id === form.invoiceId)
+                    const lines = inv?.lines ?? []
+                    if (lines.length > 1) {
+                      return (
+                        <Select
+                          value={form.studentId}
+                          onValueChange={(v) => {
+                            const line = lines.find((l) => l.studentId === v)
+                            setForm((p) => ({
+                              ...p,
+                              studentId: v,
+                              grossFee: line?.tuitionFee ?? p.grossFee,
+                            }))
+                          }}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Select student on invoice" /></SelectTrigger>
+                          <SelectContent>
+                            {lines.map((l) => (
+                              <SelectItem key={l.id} value={l.studentId}>
+                                {getStudent(l.studentId)?.name ?? l.studentId}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
+                    }
+                    return (
+                      <p className="font-medium">{form.studentId ? getStudent(form.studentId)?.name ?? '—' : '—'}</p>
+                    )
+                  })()}
                 </div>
                 <div>
                   <p className="text-muted-foreground">Branch</p>

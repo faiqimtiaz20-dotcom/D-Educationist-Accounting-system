@@ -12,8 +12,6 @@ import { Separator } from '@/components/ui/separator'
 import {
   bankAccounts,
   getBranchName,
-  getSubAgent,
-  subAgents,
 } from '@/data'
 import { useBranchFilter } from '@/hooks/useBranchFilter'
 import { formatCurrency, subAgentPayable } from '@/lib/calculations'
@@ -34,6 +32,7 @@ const emptyPayment = {
 export default function SubAgentPaymentsPage() {
   const subAgentCommissions = useDataStore((s) => s.subAgentCommissions)
   const subAgentPayments = useDataStore((s) => s.subAgentPayments)
+  const subAgents = useDataStore((s) => s.subAgents)
   const invoices = useDataStore((s) => s.invoices)
   const students = useDataStore((s) => s.students)
   const addSubAgentPayment = useDataStore((s) => s.addSubAgentPayment)
@@ -41,6 +40,7 @@ export default function SubAgentPaymentsPage() {
   const deleteSubAgentPayment = useDataStore((s) => s.deleteSubAgentPayment)
 
   const getStudent = (id: string) => students.find((s) => s.id === id)
+  const getSubAgent = (id: string) => subAgents.find((a) => a.id === id)
 
   const filteredCommissions = useBranchFilter(subAgentCommissions)
   const commissionIds = new Set(filteredCommissions.map((c) => c.id))

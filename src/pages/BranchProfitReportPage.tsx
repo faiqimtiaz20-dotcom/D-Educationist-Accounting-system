@@ -76,7 +76,14 @@ export default function BranchProfitReportPage() {
     for (const inv of invoices) {
       if (inv.status === 'Draft') continue
       if (!scopedBranchIds.includes(inv.branchId)) continue
-      const student = students.find((s) => s.id === inv.studentId)
+      const names = (inv.lines ?? [])
+        .map((l) => students.find((s) => s.id === l.studentId)?.name ?? 'Student')
+        .join(', ')
+      const unis = [...new Set(
+        (inv.lines ?? [])
+          .map((l) => students.find((s) => s.id === l.studentId)?.university)
+          .filter(Boolean)
+      )].join(', ')
       rows.push({
         id: `inv-${inv.id}`,
         date: inv.invoiceDate,
@@ -84,7 +91,7 @@ export default function BranchProfitReportPage() {
         branchName: branchName(inv.branchId),
         type: 'Income',
         reference: inv.invoiceNo,
-        description: `${student?.name ?? 'Student'} — ${student?.university ?? 'University'}`,
+        description: `${names || 'Student'} — ${unis || 'University'}`,
         amountPKR: invoiceAmountPKR(inv),
         status: inv.status,
       })

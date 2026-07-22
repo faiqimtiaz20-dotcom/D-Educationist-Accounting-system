@@ -4,16 +4,15 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { branches, getBranchName, subAgents } from '@/data'
-import { useBranchFilter } from '@/hooks/useBranchFilter'
-import { branchFilterOptions } from '@/lib/filter-options'
+import { useDataStore } from '@/store/data-store'
 import type { SubAgent } from '@/types'
-import { Pencil, Users } from 'lucide-react'
+import { Pencil, Trash2, Users } from 'lucide-react'
+import { toast } from 'sonner'
 
-const emptyForm: SubAgent = {
-  id: '',
+type SubAgentForm = Omit<SubAgent, 'id'>
+
+const emptyForm: SubAgentForm = {
   name: '',
   ntn: '',
   email: '',
@@ -21,25 +20,59 @@ const emptyForm: SubAgent = {
   accountTitle: '',
   iban: '',
   accountNo: '',
-  branchId: 'khi',
 }
 
 export default function SubAgentsPage() {
-  const filtered = useBranchFilter(subAgents)
+  const subAgents = useDataStore((s) => s.subAgents)
+  const addSubAgent = useDataStore((s) => s.addSubAgent)
+  const updateSubAgent = useDataStore((s) => s.updateSubAgent)
+  const deleteSubAgent = useDataStore((s) => s.deleteSubAgent)
+
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [editing, setEditing] = useState<SubAgent | null>(null)
-  const [form, setForm] = useState<SubAgent>(emptyForm)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<SubAgentForm>(emptyForm)
 
   const openAdd = () => {
-    setEditing(null)
-    setForm({ ...emptyForm, id: `sa${Date.now()}` })
+    setEditingId(null)
+    setForm({ ...emptyForm })
     setSheetOpen(true)
   }
 
   const openEdit = (agent: SubAgent) => {
-    setEditing(agent)
-    setForm({ ...agent })
+    setEditingId(agent.id)
+    setForm({
+      name: agent.name,
+      ntn: agent.ntn,
+      email: agent.email,
+      contact: agent.contact,
+      accountTitle: agent.accountTitle,
+      iban: agent.iban,
+      accountNo: agent.accountNo,
+    })
     setSheetOpen(true)
+  }
+
+  const handleSave = () => {
+    if (!form.name.trim()) {
+      toast.error('Sub-agent name is required')
+      return
+    }
+
+    if (editingId) {
+      updateSubAgent(editingId, form)
+      toast.success('Sub-agent updated')
+    } else {
+      addSubAgent(form)
+      toast.success('Sub-agent added')
+    }
+    setSheetOpen(false)
+  }
+
+  const handleDelete = (agent: SubAgent) => {
+    if (!confirm(`Delete sub-agent ${agent.name}?`)) return
+    const ok = deleteSubAgent(agent.id)
+    if (ok) toast.success('Sub-agent deleted')
+    else toast.error('Cannot delete — sub-agent is linked to students or commissions')
   }
 
   const columns: Column<SubAgent>[] = [
@@ -50,15 +83,19 @@ export default function SubAgentsPage() {
     { key: 'accountTitle', header: 'A/c Title', cell: (r) => r.accountTitle },
     { key: 'iban', header: 'IBAN', cell: (r) => <span className="font-mono text-xs">{r.iban}</span> },
     { key: 'accountNo', header: 'Account No.', cell: (r) => r.accountNo },
-    { key: 'branch', header: 'Branch', cell: (r) => getBranchName(r.branchId) },
     {
       key: 'actions',
       header: '',
-      className: 'w-12',
+      className: 'w-24',
       cell: (r) => (
-        <Button variant="ghost" size="icon" onClick={() => openEdit(r)}>
-          <Pencil className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => openEdit(r)} title="Edit">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => handleDelete(r)} title="Delete">
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        </div>
       ),
     },
   ]
@@ -67,7 +104,7 @@ export default function SubAgentsPage() {
     <div>
       <PageHeader
         title="Sub-Agent Master"
-        subtitle={`${filtered.length} sub-agents registered`}
+        subtitle={`${subAgents.length} sub-agents registered`}
         actionLabel="Add Sub-Agent"
         onAction={openAdd}
       >
@@ -75,7 +112,7 @@ export default function SubAgentsPage() {
       </PageHeader>
 
       <DataTable
-        data={filtered}
+        data={subAgents}
         columns={columns}
         searchPlaceholder="Search by name, NTN, email..."
         searchFilter={(row, q) =>
@@ -84,15 +121,12 @@ export default function SubAgentsPage() {
           row.email.toLowerCase().includes(q) ||
           row.contact.includes(q)
         }
-        filters={[
-          { key: 'branch', label: 'Branch', type: 'select', options: branchFilterOptions, accessor: (r) => r.branchId },
-        ]}
       />
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>{editing ? 'Edit Sub-Agent' : 'Add Sub-Agent'}</SheetTitle>
+            <SheetTitle>{editingId ? 'Edit Sub-Agent' : 'Add Sub-Agent'}</SheetTitle>
           </SheetHeader>
           <div className="mt-6 space-y-4">
             <div className="space-y-2">
@@ -123,19 +157,8 @@ export default function SubAgentsPage() {
               <Label>Account No.</Label>
               <Input value={form.accountNo} onChange={(e) => setForm({ ...form, accountNo: e.target.value })} />
             </div>
-            <div className="space-y-2">
-              <Label>Branch</Label>
-              <Select value={form.branchId} onValueChange={(v) => setForm({ ...form, branchId: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {branches.filter((b) => !b.isHeadOffice).map((b) => (
-                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button className="w-full" onClick={() => setSheetOpen(false)}>
-              {editing ? 'Save Changes' : 'Add Sub-Agent'}
+            <Button className="w-full" onClick={handleSave}>
+              {editingId ? 'Save Changes' : 'Add Sub-Agent'}
             </Button>
           </div>
         </SheetContent>

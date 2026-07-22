@@ -73,19 +73,25 @@ export interface Student {
   currency: Currency
 }
 
-export interface Invoice {
+export interface InvoiceLine {
   id: string
-  invoiceNo: string
   studentId: string
-  branchId: string
-  invoiceDate: string
-  poNumber?: string
   tuitionFee: number
   scholarship: number
   commissionRate: number
-  currency: Currency
   bonus: number
+}
+
+export interface Invoice {
+  id: string
+  invoiceNo: string
+  branchId: string
+  invoiceDate: string
+  poNumber?: string
+  currency: Currency
   status: InvoiceStatus
+  /** One or more student commission lines on this invoice. */
+  lines: InvoiceLine[]
 }
 
 export interface Receivable {
@@ -121,7 +127,6 @@ export interface SubAgent {
   accountTitle: string
   iban: string
   accountNo: string
-  branchId: string
 }
 
 export interface SubAgentCommission {

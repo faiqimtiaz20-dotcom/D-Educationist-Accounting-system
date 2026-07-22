@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCurrentUser, useEffectiveBranchId } from '@/hooks/useAuth'
 import { formatCurrency, subAgentPayable } from '@/lib/calculations'
 import { invoiceAmountPKR } from '@/lib/gl-posting'
-import { getInvoiceOutstanding, getInvoicePaid, getInvoiceTotal } from '@/lib/invoice'
+import { getInvoiceLineTotal, getInvoiceOutstanding, getInvoicePaid, getInvoiceTotal } from '@/lib/invoice'
 import { canViewAllBranches } from '@/lib/permissions'
 import { useAppStore } from '@/store/app-store'
 import { useDataStore } from '@/store/data-store'
@@ -112,10 +112,9 @@ export default function CounsellorReportPage() {
     let rows = invoices.filter((inv) => inv.status !== 'Draft')
 
     if (isCounsellor && user) {
-      rows = rows.filter((inv) => {
-        const student = students.find((s) => s.id === inv.studentId)
-        return student?.consultantId === user.id
-      })
+      rows = rows.filter((inv) =>
+        (inv.lines ?? []).some((line) => students.find((s) => s.id === line.studentId)?.consultantId === user.id)
+      )
     } else if (!isSuperAdmin && user) {
       rows = rows.filter((inv) => inv.branchId === user.branchId)
     } else if (effectiveBranchId !== 'all') {
@@ -123,10 +122,9 @@ export default function CounsellorReportPage() {
     }
 
     if (selectedCounsellorId !== 'all') {
-      rows = rows.filter((inv) => {
-        const student = students.find((s) => s.id === inv.studentId)
-        return student?.consultantId === selectedCounsellorId
-      })
+      rows = rows.filter((inv) =>
+        (inv.lines ?? []).some((line) => students.find((s) => s.id === line.studentId)?.consultantId === selectedCounsellorId)
+      )
     }
 
     if (dateFrom) {
@@ -167,39 +165,56 @@ export default function CounsellorReportPage() {
   }, [subAgentCommissions, scopedInvoiceIds, isSuperAdmin, user, isCounsellor, effectiveBranchId])
 
   const detailRows = useMemo((): CounsellorPLDetailRow[] => {
-    return scopedInvoices.map((inv) => {
-      const student = students.find((s) => s.id === inv.studentId)
-      const incomePKR = invoiceAmountPKR(inv)
-      const costPKR = costByInvoiceId.get(inv.id) ?? 0
-      const profitPKR = incomePKR - costPKR
-      const received = getInvoicePaid(receivables, inv.id)
-      const outstanding = getInvoiceOutstanding(inv, receivables)
-      const cId = student?.consultantId ?? ''
-      return {
-        id: inv.id,
-        invoiceNo: inv.invoiceNo,
-        invoiceDate: inv.invoiceDate,
-        branchId: inv.branchId,
-        branchName: branchName(inv.branchId),
-        counsellorId: cId,
-        counsellorName: counsellorName(cId),
-        studentId: inv.studentId,
-        studentName: student?.name ?? '—',
-        university: student?.university || 'Unknown',
-        country: student?.country || '—',
-        currency: inv.currency,
-        commission: getInvoiceTotal(inv),
-        incomePKR,
-        costPKR,
-        profitPKR,
-        received,
-        outstanding,
-        netProfitPKR: profitPKR - outstanding,
-        status: inv.status,
+    return scopedInvoices.flatMap((inv) => {
+      const invTotal = getInvoiceTotal(inv)
+      const incomePKRTotal = invoiceAmountPKR(inv)
+      const costPKRTotal = costByInvoiceId.get(inv.id) ?? 0
+      const receivedTotal = getInvoicePaid(receivables, inv.id)
+      const outstandingTotal = getInvoiceOutstanding(inv, receivables)
+      let lines = inv.lines ?? []
+
+      if (isCounsellor && user) {
+        lines = lines.filter((line) => students.find((s) => s.id === line.studentId)?.consultantId === user.id)
+      } else if (selectedCounsellorId !== 'all') {
+        lines = lines.filter((line) => students.find((s) => s.id === line.studentId)?.consultantId === selectedCounsellorId)
       }
+
+      return lines.map((line) => {
+        const student = students.find((s) => s.id === line.studentId)
+        const lineTotal = getInvoiceLineTotal(line)
+        const share = invTotal > 0 ? lineTotal / invTotal : 0
+        const incomePKR = incomePKRTotal * share
+        const costPKR = costPKRTotal * share
+        const profitPKR = incomePKR - costPKR
+        const received = receivedTotal * share
+        const outstanding = outstandingTotal * share
+        const cId = student?.consultantId ?? ''
+        return {
+          id: `${inv.id}-${line.id}`,
+          invoiceNo: inv.invoiceNo,
+          invoiceDate: inv.invoiceDate,
+          branchId: inv.branchId,
+          branchName: branchName(inv.branchId),
+          counsellorId: cId,
+          counsellorName: counsellorName(cId),
+          studentId: line.studentId,
+          studentName: student?.name ?? '—',
+          university: student?.university || 'Unknown',
+          country: student?.country || '—',
+          currency: inv.currency,
+          commission: lineTotal,
+          incomePKR,
+          costPKR,
+          profitPKR,
+          received,
+          outstanding,
+          netProfitPKR: profitPKR - outstanding,
+          status: inv.status,
+        }
+      })
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedInvoices, students, receivables, costByInvoiceId, branches, users])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- counsellorName/branchName use store
+  }, [scopedInvoices, students, receivables, costByInvoiceId, isCounsellor, user, selectedCounsellorId, branches, users])
 
   const filteredDetails = useMemo(() => {
     if (!detailCounsellorId) return detailRows
@@ -221,7 +236,7 @@ export default function CounsellorReportPage() {
           name: c.name,
           branchId: c.branchId,
           branchName: branchName(c.branchId),
-          invoiceCount: rows.length,
+          invoiceCount: new Set(rows.map((r) => r.invoiceNo)).size,
           studentCount: studentIds.size,
           incomePKR,
           costPKR,

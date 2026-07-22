@@ -8,16 +8,22 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
-import { getSubAgent, subAgents, users } from '@/data'
+import { users } from '@/data'
 import { useCurrentUser } from '@/hooks/useAuth'
 import { useBranchFilter } from '@/hooks/useBranchFilter'
 import { formatCurrency } from '@/lib/calculations'
 import { canViewAllBranches } from '@/lib/permissions'
 import { getUserName } from '@/lib/org'
 import { branchFilterOptions, currencyFilterOptions } from '@/lib/filter-options'
+import {
+  buildStudentCsvTemplate,
+  downloadTextFile,
+  parseStudentCsv,
+} from '@/lib/student-csv'
 import { useDataStore } from '@/store/data-store'
 import type { ApplicationStatus, Student } from '@/types'
-import { useMemo, useState } from 'react'
+import { Download, Upload } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 const statuses: ApplicationStatus[] = ['Applied', 'Offer', 'Visa', 'Enrolled', 'Deferred', 'Withdrawn']
@@ -47,19 +53,23 @@ export default function MasterSheetPage() {
   const storeBranches = useDataStore((s) => s.branches)
   const students = useDataStore((s) => s.students)
   const universities = useDataStore((s) => s.universities)
+  const subAgents = useDataStore((s) => s.subAgents)
   const addStudent = useDataStore((s) => s.addStudent)
   const updateStudent = useDataStore((s) => s.updateStudent)
   const deleteStudent = useDataStore((s) => s.deleteStudent)
+
+  const getSubAgent = (id?: string) => (id ? subAgents.find((a) => a.id === id) : undefined)
 
   const branchStudents = useBranchFilter(students)
   const [activeStatus, setActiveStatus] = useState('all')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [isNew, setIsNew] = useState(false)
   const [form, setForm] = useState<Student | Omit<Student, 'id'>>(emptyStudent())
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const isSuperAdmin = currentUser ? canViewAllBranches(currentUser.role) : false
   const isCounsellor = currentUser?.role === 'Counsellor'
-  const branchSubAgents = subAgents.filter((a) => a.branchId === form.branchId)
   const branchOptions = storeBranches.filter((b) => !b.isHeadOffice)
 
   const filtered = useMemo(() => {
@@ -104,6 +114,88 @@ export default function MasterSheetPage() {
     if (!confirm(`Delete student ${student.name}?`)) return
     deleteStudent(student.id)
     toast.success('Student deleted')
+  }
+
+  const handleDownloadTemplate = () => {
+    downloadTextFile('master-sheet-template.csv', buildStudentCsvTemplate())
+    toast.success('CSV template downloaded')
+  }
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Please select a .csv file')
+      return
+    }
+    setImporting(true)
+    try {
+      const text = await file.text()
+      const defaultCounsellorId =
+        (isCounsellor && currentUser?.id) ||
+        users.find((u) => u.role === 'Counsellor')?.id ||
+        undefined
+
+      const result = parseStudentCsv(text, {
+        branches: storeBranches,
+        users,
+        subAgents,
+        existingStudents: students,
+        lockedBranchId: isSuperAdmin ? undefined : currentUser?.branchId,
+        defaultCounsellorId,
+      })
+
+      let created = 0
+      let updated = 0
+      const errors: string[] = []
+      const byStudentId = new Map(
+        useDataStore.getState().students.map((s) => [s.studentId.trim().toLowerCase(), s.id])
+      )
+
+      for (const row of result.rows) {
+        if (row.error || !row.payload) {
+          if (row.error) errors.push(`Row ${row.rowNumber}: ${row.error}`)
+          continue
+        }
+        const key = row.payload.studentId.trim().toLowerCase()
+        const existingId = byStudentId.get(key)
+        if (existingId) {
+          updateStudent(existingId, row.payload)
+          updated++
+        } else {
+          addStudent(row.payload)
+          const fresh = useDataStore
+            .getState()
+            .students.find((s) => s.studentId.trim().toLowerCase() === key)
+          if (fresh) byStudentId.set(key, fresh.id)
+          created++
+        }
+      }
+
+      if (created === 0 && updated === 0) {
+        toast.error(errors[0] ?? 'No valid rows to import')
+        if (errors.length > 1) {
+          console.warn('CSV import errors', errors)
+        }
+        return
+      }
+
+      const summary = `Imported: ${created} created, ${updated} updated`
+      if (errors.length > 0) {
+        toast.warning(`${summary}. ${errors.length} row(s) skipped`)
+        console.warn('CSV import errors', errors)
+      } else {
+        toast.success(summary)
+      }
+    } catch {
+      toast.error('Failed to read CSV file')
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   const updateField = <K extends keyof Student>(key: K, value: Student[K]) => {
@@ -187,7 +279,21 @@ export default function MasterSheetPage() {
         subtitle="Student records — single source of truth for invoices and receivables"
         actionLabel="Add Student"
         onAction={openAdd}
-      />
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => void handleImportFile(e.target.files?.[0])}
+        />
+        <Button type="button" variant="outline" onClick={handleDownloadTemplate}>
+          <Download className="mr-1 h-4 w-4" /> Template
+        </Button>
+        <Button type="button" variant="outline" disabled={importing} onClick={handleImportClick}>
+          <Upload className="mr-1 h-4 w-4" /> {importing ? 'Importing…' : 'Import CSV'}
+        </Button>
+      </PageHeader>
 
       <DataTable
         data={filtered}
@@ -248,7 +354,7 @@ export default function MasterSheetPage() {
                 {isSuperAdmin ? (
                   <Select
                     value={form.branchId}
-                    onValueChange={(v) => setForm((prev) => ({ ...prev, branchId: v, subAgentId: undefined }))}
+                    onValueChange={(v) => setForm((prev) => ({ ...prev, branchId: v }))}
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -340,7 +446,7 @@ export default function MasterSheetPage() {
                   <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    {branchSubAgents.map((a) => (
+                    {subAgents.map((a) => (
                       <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>

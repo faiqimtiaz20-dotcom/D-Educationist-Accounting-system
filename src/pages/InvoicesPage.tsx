@@ -23,10 +23,17 @@ import { useBranchFilter } from '@/hooks/useBranchFilter'
 import { useCurrentUser } from '@/hooks/useAuth'
 import { useModulePermission } from '@/hooks/usePermission'
 import { canViewAllBranches } from '@/lib/permissions'
-import { formatCurrency, netCommission, netFee } from '@/lib/calculations'
+import { formatCurrency, netFee } from '@/lib/calculations'
+import {
+  getInvoiceLineTotal,
+  getInvoiceStudentLabel,
+  getInvoiceTotal,
+  getInvoiceUniversities,
+  linesFinanciallyEqual,
+} from '@/lib/invoice'
 import { invoiceHasPayments, useDataStore } from '@/store/data-store'
 import { isDateLocked } from '@/store/settings-store'
-import type { Currency, Invoice, InvoiceStatus } from '@/types'
+import type { Currency, Invoice, InvoiceLine, InvoiceStatus } from '@/types'
 import { Eye, FileText, MoreHorizontal, Pencil, Send, Trash2, Wallet } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -41,17 +48,16 @@ const formatDate = (iso: string) => {
 }
 
 const emptyForm = {
-  studentId: '',
   branchId: 'khi',
   invoiceDate: new Date().toISOString().slice(0, 10),
   poNumber: '',
-  tuitionFee: 0,
-  scholarship: 0,
-  commissionRate: 15,
   currency: 'GBP' as Currency,
-  bonus: 0,
   status: 'Draft' as InvoiceStatus,
+  lines: [] as InvoiceLine[],
 }
+
+let lineSeq = 0
+const nextLineId = () => `line-${Date.now()}-${++lineSeq}`
 
 export default function InvoicesPage() {
   const currentUser = useCurrentUser()
@@ -79,6 +85,8 @@ export default function InvoicesPage() {
   const [sendInvoice, setSendInvoice] = useState<Invoice | null>(null)
   const [isResend, setIsResend] = useState(false)
   const [emailForm, setEmailForm] = useState({ to: '', cc: '', subject: '', body: '' })
+  const [studentSearch, setStudentSearch] = useState('')
+  const [universityFilter, setUniversityFilter] = useState('all')
 
   const paymentInvoice = paymentInvoiceId
     ? invoices.find((i) => i.id === paymentInvoiceId) ?? null
@@ -103,15 +111,39 @@ export default function InvoicesPage() {
     ]
   }, [branchInvoices])
 
-  const selectedStudent = students.find((s) => s.id === form.studentId)
-  const netFeeAmount = netFee(form.tuitionFee, form.scholarship)
-  const commissionAmount = netCommission(form.tuitionFee, form.scholarship, form.commissionRate)
-  const totalDue = commissionAmount + form.bonus
+  const totalDue = getInvoiceTotal({ ...form, id: '', invoiceNo: '', lines: form.lines } as Invoice)
+  const selectedIds = useMemo(() => new Set(form.lines.map((l) => l.studentId)), [form.lines])
+  const editingHasPayments = isEdit && editId ? invoiceHasPayments(receivables, editId) : false
+  const lockedUniversity = useMemo(() => {
+    if (form.lines.length === 0) return null
+    return getStudent(form.lines[0].studentId)?.university ?? null
+  }, [form.lines, students])
+
+  const universityOptions = useMemo(() => {
+    const names = [...new Set(branchStudents.map((s) => s.university).filter(Boolean))].sort()
+    return names.map((name) => ({ label: name, value: name }))
+  }, [branchStudents])
+
+  const selectableStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase()
+    const uni = lockedUniversity ?? (universityFilter !== 'all' ? universityFilter : null)
+    return branchStudents.filter((s) => {
+      if (uni && s.university !== uni) return false
+      if (!q) return true
+      return (
+        s.name.toLowerCase().includes(q) ||
+        s.studentId.toLowerCase().includes(q) ||
+        s.university.toLowerCase().includes(q)
+      )
+    })
+  }, [branchStudents, studentSearch, universityFilter, lockedUniversity])
 
   const openCreate = () => {
     setIsEdit(false)
     setEditId(null)
     setForm(emptyForm)
+    setStudentSearch('')
+    setUniversityFilter('all')
     setDialogOpen(true)
   }
 
@@ -119,32 +151,36 @@ export default function InvoicesPage() {
     setIsEdit(true)
     setEditId(invoice.id)
     setForm({
-      studentId: invoice.studentId,
       branchId: invoice.branchId,
       invoiceDate: invoice.invoiceDate,
       poNumber: invoice.poNumber ?? '',
-      tuitionFee: invoice.tuitionFee,
-      scholarship: invoice.scholarship,
-      commissionRate: invoice.commissionRate,
       currency: invoice.currency,
-      bonus: invoice.bonus,
       status: invoice.status,
+      lines: invoice.lines.map((l) => ({ ...l })),
     })
+    setStudentSearch('')
+    const firstUni = invoice.lines[0]
+      ? students.find((s) => s.id === invoice.lines[0].studentId)?.university
+      : undefined
+    setUniversityFilter(firstUni ?? 'all')
     setDialogOpen(true)
   }
 
   const prefillEmail = (invoice: Invoice) => {
-    const student = getStudent(invoice.studentId)
-    const amount = netCommission(invoice.tuitionFee, invoice.scholarship, invoice.commissionRate) + invoice.bonus
+    const amount = getInvoiceTotal(invoice)
+    const label = getInvoiceStudentLabel(invoice, getStudent)
+    const uni = getInvoiceUniversities(invoice, getStudent)
+    const first = invoice.lines[0] ? getStudent(invoice.lines[0].studentId) : undefined
     setSendInvoice(invoice)
     setEmailForm({
-      to: student?.email ?? '',
+      to: first?.email ?? '',
       cc: '',
       subject: `Commission Invoice ${invoice.invoiceNo}`,
       body:
         `Dear Sir/Madam,\n\n` +
         `Please find attached commission invoice ${invoice.invoiceNo} dated ${formatDate(invoice.invoiceDate)}` +
-        `${student ? ` for ${student.name} (${student.university})` : ''}.\n\n` +
+        ` for ${label}` +
+        `${uni !== '—' ? ` (${uni})` : ''}.\n\n` +
         `Total amount: ${formatCurrency(amount, invoice.currency)}.\n\n` +
         `Kind regards,\nD' Educationist`,
     })
@@ -208,17 +244,57 @@ export default function InvoicesPage() {
     else toast.error('Cannot delete invoice with recorded payments')
   }
 
-  const loadStudent = (studentId: string) => {
+  const toggleStudent = (studentId: string) => {
+    if (editingHasPayments) {
+      toast.error('Cannot change students after payments have been recorded')
+      return
+    }
     const student = students.find((s) => s.id === studentId)
     if (!student) return
-    setForm((prev) => ({
-      ...prev,
+
+    if (selectedIds.has(studentId)) {
+      setForm((prev) => ({
+        ...prev,
+        lines: prev.lines.filter((l) => l.studentId !== studentId),
+      }))
+      return
+    }
+
+    if (form.lines.length > 0 && student.currency !== form.currency) {
+      toast.error(`Student currency (${student.currency}) must match invoice currency (${form.currency})`)
+      return
+    }
+
+    const invoiceUniversity = getStudent(form.lines[0]?.studentId)?.university
+    if (form.lines.length > 0 && invoiceUniversity && student.university !== invoiceUniversity) {
+      toast.error('Combined invoice allows students from one university only')
+      return
+    }
+
+    const line: InvoiceLine = {
+      id: nextLineId(),
       studentId,
-      branchId: student.branchId,
       tuitionFee: student.tuitionFee,
       scholarship: student.scholarship,
       commissionRate: student.expectedCommissionRate,
-      currency: student.currency,
+      bonus: 0,
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      branchId: prev.lines.length === 0 ? student.branchId : prev.branchId,
+      currency: prev.lines.length === 0 ? student.currency : prev.currency,
+      lines: [...prev.lines, line],
+    }))
+    if (form.lines.length === 0) {
+      setUniversityFilter(student.university)
+    }
+  }
+
+  const updateLine = (lineId: string, patch: Partial<InvoiceLine>) => {
+    setForm((prev) => ({
+      ...prev,
+      lines: prev.lines.map((l) => (l.id === lineId ? { ...l, ...patch } : l)),
     }))
   }
 
@@ -227,13 +303,22 @@ export default function InvoicesPage() {
       toast.error('You do not have permission to modify invoices')
       return
     }
-    if (!form.studentId) {
-      toast.error('Please select a student')
+    if (form.lines.length === 0) {
+      toast.error('Select at least one student')
       return
     }
-    if (form.scholarship > form.tuitionFee) {
-      toast.error('Scholarship cannot exceed tuition fee')
+    const universities = new Set(
+      form.lines.map((l) => getStudent(l.studentId)?.university).filter(Boolean)
+    )
+    if (universities.size > 1) {
+      toast.error('All students on one invoice must belong to the same university')
       return
+    }
+    for (const line of form.lines) {
+      if (line.scholarship > line.tuitionFee) {
+        toast.error('Scholarship cannot exceed tuition fee on any line')
+        return
+      }
     }
     if (isDateLocked(form.invoiceDate)) {
       toast.error('This period is locked — cannot post to a closed fiscal period')
@@ -241,48 +326,85 @@ export default function InvoicesPage() {
     }
     if (isEdit && editId && invoiceHasPayments(receivables, editId)) {
       const existing = invoices.find((i) => i.id === editId)
-      if (existing && (
-        form.tuitionFee !== existing.tuitionFee ||
-        form.scholarship !== existing.scholarship ||
-        form.commissionRate !== existing.commissionRate ||
-        form.bonus !== existing.bonus
-      )) {
+      if (existing && !linesFinanciallyEqual(existing.lines, form.lines)) {
         toast.error('Cannot change financial amounts after payments have been recorded')
         return
       }
     }
+    const payload = {
+      branchId: form.branchId,
+      invoiceDate: form.invoiceDate,
+      poNumber: form.poNumber || undefined,
+      currency: form.currency,
+      status: form.status,
+      lines: form.lines,
+    }
     if (isEdit && editId) {
-      updateInvoice(editId, form)
+      updateInvoice(editId, payload)
       toast.success('Invoice updated')
     } else {
-      addInvoice({ ...form, status: 'Draft' })
+      addInvoice({ ...payload, status: 'Draft' })
       toast.success('Invoice created as Draft')
     }
     setDialogOpen(false)
   }
 
-  const editingHasPayments = isEdit && editId ? invoiceHasPayments(receivables, editId) : false
+  const sumTuition = (row: Invoice) => row.lines.reduce((s, l) => s + l.tuitionFee, 0)
+  const sumScholarship = (row: Invoice) => row.lines.reduce((s, l) => s + l.scholarship, 0)
+  const sumBonus = (row: Invoice) => row.lines.reduce((s, l) => s + l.bonus, 0)
+  const rateLabel = (row: Invoice) => {
+    const rates = [...new Set(row.lines.map((l) => l.commissionRate))]
+    return rates.length === 1 ? `${rates[0]}%` : 'Mixed'
+  }
 
   const columns: Column<Invoice>[] = [
     { key: 'date', header: 'Date', cell: (row) => formatDate(row.invoiceDate), sortAccessor: (row) => row.invoiceDate },
     { key: 'invoiceNo', header: 'Invoice No.', cell: (row) => <span className="font-medium">{row.invoiceNo}</span> },
-    { key: 'studentId', header: 'Student ID', cell: (row) => getStudent(row.studentId)?.studentId ?? row.studentId },
-    { key: 'student', header: 'Student', cell: (row) => getStudent(row.studentId)?.name ?? row.studentId },
+    {
+      key: 'students',
+      header: 'Students',
+      cell: (row) => (
+        <span>
+          {getInvoiceStudentLabel(row, getStudent)}
+          {row.lines.length > 1 && (
+            <span className="ml-1 text-xs text-muted-foreground">({row.lines.length})</span>
+          )}
+        </span>
+      ),
+    },
     ...(isSuperAdmin
       ? [{ key: 'branch', header: 'Branch', cell: (row: Invoice) => getBranchName(row.branchId) }]
       : []),
-    { key: 'university', header: 'University', cell: (row) => getStudent(row.studentId)?.university ?? '—' },
-    { key: 'course', header: 'Course', cell: (row) => getStudent(row.studentId)?.course ?? '—' },
-    { key: 'tuitionFee', header: 'Tuition Fee', cell: (row) => formatCurrency(row.tuitionFee, row.currency), className: 'text-right' },
-    { key: 'scholarship', header: 'Scholarship', cell: (row) => formatCurrency(row.scholarship, row.currency), className: 'text-right' },
+    { key: 'university', header: 'University', cell: (row) => getInvoiceUniversities(row, getStudent) },
+    {
+      key: 'tuitionFee',
+      header: 'Tuition Fee',
+      cell: (row) => formatCurrency(sumTuition(row), row.currency),
+      className: 'text-right',
+      sortAccessor: sumTuition,
+    },
+    {
+      key: 'scholarship',
+      header: 'Scholarship',
+      cell: (row) => formatCurrency(sumScholarship(row), row.currency),
+      className: 'text-right',
+      sortAccessor: sumScholarship,
+    },
     { key: 'currency', header: 'Currency', cell: (row) => row.currency },
-    { key: 'commissionRate', header: 'Commission %', cell: (row) => `${row.commissionRate}%`, className: 'text-right' },
+    { key: 'commissionRate', header: 'Commission %', cell: (row) => rateLabel(row), className: 'text-right' },
+    {
+      key: 'bonus',
+      header: 'Bonus',
+      className: 'text-right',
+      sortAccessor: sumBonus,
+      cell: (row) => formatCurrency(sumBonus(row), row.currency),
+    },
     {
       key: 'total',
       header: 'Inv Amount',
       className: 'text-right',
-      sortAccessor: (row) => netCommission(row.tuitionFee, row.scholarship, row.commissionRate) + row.bonus,
-      cell: (row) => formatCurrency(netCommission(row.tuitionFee, row.scholarship, row.commissionRate) + row.bonus, row.currency),
+      sortAccessor: (row) => getInvoiceTotal(row),
+      cell: (row) => formatCurrency(getInvoiceTotal(row), row.currency),
     },
     {
       key: 'paid',
@@ -290,7 +412,7 @@ export default function InvoicesPage() {
       sortAccessor: (row) => getInvoiceAmountPaid(row.id),
       cell: (row) => {
         const paid = getInvoiceAmountPaid(row.id)
-        const total = netCommission(row.tuitionFee, row.scholarship, row.commissionRate) + row.bonus
+        const total = getInvoiceTotal(row)
         return (
           <span className={paid >= total ? 'text-emerald-600 font-medium' : paid > 0 ? 'text-amber-600' : ''}>
             {formatCurrency(paid, row.currency)}
@@ -301,11 +423,9 @@ export default function InvoicesPage() {
     {
       key: 'outstanding',
       header: 'Outstanding',
-      sortAccessor: (row) => Math.max(0, netCommission(row.tuitionFee, row.scholarship, row.commissionRate) + row.bonus - getInvoiceAmountPaid(row.id)),
+      sortAccessor: (row) => Math.max(0, getInvoiceTotal(row) - getInvoiceAmountPaid(row.id)),
       cell: (row) => {
-        const paid = getInvoiceAmountPaid(row.id)
-        const total = netCommission(row.tuitionFee, row.scholarship, row.commissionRate) + row.bonus
-        const out = Math.max(0, total - paid)
+        const out = Math.max(0, getInvoiceTotal(row) - getInvoiceAmountPaid(row.id))
         return formatCurrency(out, row.currency)
       },
     },
@@ -357,17 +477,14 @@ export default function InvoicesPage() {
     },
   ]
 
-  const previewStudent = previewInvoice ? getStudent(previewInvoice.studentId) : null
-  const previewCommission = previewInvoice
-    ? netCommission(previewInvoice.tuitionFee, previewInvoice.scholarship, previewInvoice.commissionRate)
-    : 0
   const previewPaid = previewInvoice ? getInvoiceAmountPaid(previewInvoice.id) : 0
+  const previewTotal = previewInvoice ? getInvoiceTotal(previewInvoice) : 0
 
   return (
     <div>
       <PageHeader
         title="Commission Invoices"
-        subtitle="Generate and track university commission invoices"
+        subtitle="Generate and track university commission invoices (one invoice can include multiple students)"
         actionLabel={canWrite ? 'Create Invoice' : undefined}
         onAction={canWrite ? openCreate : undefined}
       />
@@ -377,8 +494,10 @@ export default function InvoicesPage() {
         columns={columns}
         searchPlaceholder="Search invoices, students..."
         searchFilter={(row, query) => {
-          const student = getStudent(row.studentId)
-          return row.invoiceNo.toLowerCase().includes(query) || (student?.name.toLowerCase().includes(query) ?? false)
+          const names = row.lines
+            .map((l) => getStudent(l.studentId)?.name?.toLowerCase() ?? '')
+            .join(' ')
+          return row.invoiceNo.toLowerCase().includes(query) || names.includes(query)
         }}
         statusPills={statusPills}
         activeStatus={activeStatus}
@@ -389,38 +508,16 @@ export default function InvoicesPage() {
             : []),
           { key: 'currency', label: 'Currency', type: 'select', options: currencyFilterOptions, accessor: (r) => r.currency },
           { key: 'invoiceDate', label: 'Invoice Date', type: 'dateRange', accessor: (r) => r.invoiceDate },
-          { key: 'amount', label: 'Invoice Amount', type: 'numberRange', accessor: (r) => netCommission(r.tuitionFee, r.scholarship, r.commissionRate) + r.bonus },
+          { key: 'amount', label: 'Invoice Amount', type: 'numberRange', accessor: (r) => getInvoiceTotal(r) },
         ]}
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{isEdit ? 'Edit Invoice' : 'Create Commission Invoice'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Student (from Master Sheet)</Label>
-              <Select value={form.studentId} onValueChange={loadStudent}>
-                <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                <SelectContent>
-                  {branchStudents.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.studentId} — {s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedStudent && (
-              <Card className="bg-muted/30">
-                <CardContent className="space-y-1 p-4 text-sm">
-                  <p><span className="text-muted-foreground">University:</span> {selectedStudent.university}</p>
-                  <p><span className="text-muted-foreground">Course:</span> {selectedStudent.course}</p>
-                  <p><span className="text-muted-foreground">Intake:</span> {selectedStudent.intake}</p>
-                </CardContent>
-              </Card>
-            )}
-
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Invoice Date</Label>
@@ -431,27 +528,12 @@ export default function InvoicesPage() {
                 <Input value={form.poNumber} onChange={(e) => setForm((p) => ({ ...p, poNumber: e.target.value }))} placeholder="Optional" />
               </div>
               <div className="space-y-2">
-                <Label>Tuition Fee</Label>
-                <Input type="number" disabled={editingHasPayments} value={form.tuitionFee} onChange={(e) => setForm((p) => ({ ...p, tuitionFee: Number(e.target.value) }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Scholarship</Label>
-                <Input type="number" disabled={editingHasPayments} value={form.scholarship} onChange={(e) => setForm((p) => ({ ...p, scholarship: Number(e.target.value) }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Commission Rate</Label>
-                <Select disabled={editingHasPayments} value={String(form.commissionRate)} onValueChange={(v) => setForm((p) => ({ ...p, commissionRate: Number(v) }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {COMMISSION_RATES.map((rate) => (
-                      <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
                 <Label>Currency</Label>
-                <Select value={form.currency} onValueChange={(v) => setForm((p) => ({ ...p, currency: v as Currency }))}>
+                <Select
+                  disabled={form.lines.length > 0 || editingHasPayments}
+                  value={form.currency}
+                  onValueChange={(v) => setForm((p) => ({ ...p, currency: v as Currency }))}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {(['GBP', 'USD', 'CAD', 'AUD', 'EUR'] as const).map((c) => (
@@ -459,16 +541,12 @@ export default function InvoicesPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {form.lines.length > 0 && (
+                  <p className="text-xs text-muted-foreground">Currency is set from the first selected student.</p>
+                )}
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Bonus / Incentive</Label>
-                <Input type="number" disabled={editingHasPayments} value={form.bonus} onChange={(e) => setForm((p) => ({ ...p, bonus: Number(e.target.value) }))} />
-              </div>
-              {editingHasPayments && (
-                <p className="text-xs text-amber-600 sm:col-span-2">Financial fields are locked because payments exist on this invoice.</p>
-              )}
               {isEdit && (
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <Label>Status</Label>
                   <Select value={form.status} onValueChange={(v) => setForm((p) => ({ ...p, status: v as InvoiceStatus }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -482,15 +560,160 @@ export default function InvoicesPage() {
               )}
             </div>
 
+            <div className="space-y-2">
+              <Label>Students (select one or more from the same university)</Label>
+              {lockedUniversity && (
+                <p className="text-xs text-muted-foreground">
+                  Locked to <span className="font-medium text-foreground">{lockedUniversity}</span> — only students from this university can be added.
+                </p>
+              )}
+              <div className="grid gap-2 sm:grid-cols-[1fr_minmax(12rem,16rem)]">
+                <Input
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  placeholder="Search by name or ID..."
+                />
+                <Select
+                  value={lockedUniversity ?? universityFilter}
+                  onValueChange={setUniversityFilter}
+                  disabled={!!lockedUniversity}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by university" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All universities</SelectItem>
+                    {universityOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="max-h-40 overflow-y-auto rounded-md border p-2">
+                {selectableStudents.length === 0 ? (
+                  <p className="p-2 text-sm text-muted-foreground">No students found</p>
+                ) : (
+                  selectableStudents.map((s) => {
+                    const checked = selectedIds.has(s.id)
+                    const currencyMismatch = form.lines.length > 0 && s.currency !== form.currency && !checked
+                    const universityMismatch =
+                      !!lockedUniversity && s.university !== lockedUniversity && !checked
+                    const blocked = currencyMismatch || universityMismatch
+                    return (
+                      <label
+                        key={s.id}
+                        className={`flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50 ${blocked ? 'opacity-50' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={checked}
+                          disabled={editingHasPayments || blocked}
+                          onChange={() => toggleStudent(s.id)}
+                        />
+                        <span>
+                          <span className="font-medium">{s.studentId}</span> — {s.name}
+                          <span className="block text-xs text-muted-foreground">
+                            {s.university} · {s.currency}
+                            {universityMismatch ? ' · different university' : ''}
+                          </span>
+                        </span>
+                      </label>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            {form.lines.length > 0 && (
+              <div className="space-y-3">
+                <Label>Line items ({form.lines.length})</Label>
+                {form.lines.map((line) => {
+                  const student = getStudent(line.studentId)
+                  return (
+                    <Card key={line.id} className="bg-muted/20">
+                      <CardContent className="space-y-3 p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-sm">
+                            <p className="font-medium">{student?.name ?? line.studentId}</p>
+                            <p className="text-muted-foreground">
+                              {student?.university} — {student?.course}
+                            </p>
+                          </div>
+                          {!editingHasPayments && (
+                            <Button type="button" variant="ghost" size="sm" onClick={() => toggleStudent(line.studentId)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Tuition Fee</Label>
+                            <Input
+                              type="number"
+                              disabled={editingHasPayments}
+                              value={line.tuitionFee}
+                              onChange={(e) => updateLine(line.id, { tuitionFee: Number(e.target.value) })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Scholarship</Label>
+                            <Input
+                              type="number"
+                              disabled={editingHasPayments}
+                              value={line.scholarship}
+                              onChange={(e) => updateLine(line.id, { scholarship: Number(e.target.value) })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Commission %</Label>
+                            <Select
+                              disabled={editingHasPayments}
+                              value={String(line.commissionRate)}
+                              onValueChange={(v) => updateLine(line.id, { commissionRate: Number(v) })}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {COMMISSION_RATES.map((rate) => (
+                                  <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Bonus</Label>
+                            <Input
+                              type="number"
+                              disabled={editingHasPayments}
+                              value={line.bonus}
+                              onChange={(e) => updateLine(line.id, { bonus: Number(e.target.value) })}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">
+                            Net fee {formatCurrency(netFee(line.tuitionFee, line.scholarship), form.currency)}
+                          </span>
+                          <span className="font-medium">
+                            Line total {formatCurrency(getInvoiceLineTotal(line), form.currency)}
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+
+            {editingHasPayments && (
+              <p className="text-xs text-amber-600">Financial fields and students are locked because payments exist on this invoice.</p>
+            )}
+
             <Card className="border-primary/20 bg-primary/5">
               <CardContent className="space-y-2 p-4 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Net Fee</span>
-                  <span className="font-medium">{formatCurrency(netFeeAmount, form.currency)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Net Commission ({form.commissionRate}%)</span>
-                  <span className="font-medium">{formatCurrency(commissionAmount, form.currency)}</span>
+                  <span className="text-muted-foreground">Students</span>
+                  <span className="font-medium">{form.lines.length}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2 text-base font-bold">
                   <span>Total Invoice Amount</span>
@@ -508,7 +731,7 @@ export default function InvoicesPage() {
       </Dialog>
 
       <Dialog open={!!previewInvoice} onOpenChange={(open) => !open && setPreviewInvoice(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" /> Invoice Preview
@@ -525,17 +748,27 @@ export default function InvoicesPage() {
                   <div><p className="text-muted-foreground">Invoice No.</p><p className="font-medium">{previewInvoice.invoiceNo}</p></div>
                   <div><p className="text-muted-foreground">Date</p><p className="font-medium">{formatDate(previewInvoice.invoiceDate)}</p></div>
                   <div><p className="text-muted-foreground">Status</p><StatusPill status={previewInvoice.status} /></div>
+                  <div><p className="text-muted-foreground">Students</p><p className="font-medium">{previewInvoice.lines.length}</p></div>
                 </div>
-                {previewStudent && (
-                  <div className="mb-4 space-y-1 rounded bg-muted/40 p-3 text-sm">
-                    <p><strong>{previewStudent.name}</strong></p>
-                    <p>{previewStudent.university} — {previewStudent.course}</p>
-                  </div>
-                )}
+                <div className="mb-4 space-y-2">
+                  {previewInvoice.lines.map((line) => {
+                    const student = getStudent(line.studentId)
+                    return (
+                      <div key={line.id} className="rounded bg-muted/40 p-3 text-sm">
+                        <p><strong>{student?.name ?? line.studentId}</strong></p>
+                        <p className="text-muted-foreground">{student?.university} — {student?.course}</p>
+                        <div className="mt-2 flex justify-between">
+                          <span>Commission + Bonus</span>
+                          <span>{formatCurrency(getInvoiceLineTotal(line), previewInvoice.currency)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span>Total Invoice</span><span>{formatCurrency(previewCommission + previewInvoice.bonus, previewInvoice.currency)}</span></div>
+                  <div className="flex justify-between font-medium"><span>Total Invoice</span><span>{formatCurrency(previewTotal, previewInvoice.currency)}</span></div>
                   <div className="flex justify-between text-emerald-600"><span>Amount Paid</span><span>{formatCurrency(previewPaid, previewInvoice.currency)}</span></div>
-                  <div className="flex justify-between font-bold border-t pt-2"><span>Outstanding</span><span>{formatCurrency(Math.max(0, previewCommission + previewInvoice.bonus - previewPaid), previewInvoice.currency)}</span></div>
+                  <div className="flex justify-between font-bold border-t pt-2"><span>Outstanding</span><span>{formatCurrency(Math.max(0, previewTotal - previewPaid), previewInvoice.currency)}</span></div>
                 </div>
               </div>
               <div className="flex justify-end gap-2">
@@ -614,7 +847,7 @@ export default function InvoicesPage() {
             <div className="mt-6">
               <InvoicePaymentPanel
                 invoice={paymentInvoice}
-                studentName={getStudent(paymentInvoice.studentId)?.name}
+                studentName={getInvoiceStudentLabel(paymentInvoice, getStudent)}
               />
             </div>
           )}
